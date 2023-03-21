@@ -11,7 +11,7 @@ int tests_failed = 0;
 
 #define VERIFY_EQ_INT(expected, got, name) \
     do if ((expected) != (got)) { \
-        fprintf(stderr, "L" STRINGIZE(__LINE__) ": expected " name " of %d 0x%x; got %d 0x%x\n", expected, expected, got, got); \
+        fprintf(stdout, "L" STRINGIZE(__LINE__) ": expected " name " of %d 0x%x; got %d 0x%x\n", expected, expected, got, got); \
         return 1; \
     } while (0)
 
@@ -772,6 +772,107 @@ int test_write_non_repeat_immed_snescmd() {
     return 0;
 }
 
+int test_read_sram_m_write_snescmd() {
+    int r;
+    struct iovm1_t vm;
+    uint8_t prgm[] = {
+        // sram.addr <- $F50D00
+        IOVM1_MKINST(IOVM1_OPCODE_SETADDR, 0, 0, 1, IOVM1_TARGET_SRAM),
+        0x00,
+        0x0D,
+        0xF5,
+        // snescmd.addr <- $002DFF
+        IOVM1_MKINST(IOVM1_OPCODE_SETADDR, 0, 0, 1, IOVM1_TARGET_SNESCMD),
+        0xFF,
+        0x2D,
+        0x00,
+        // read 0x11 from immediate
+        IOVM1_MKINST(IOVM1_OPCODE_READ, 1, 0, 0, IOVM1_TARGET_SRAM),
+        // write M to SNESCMD
+        IOVM1_MKINST(IOVM1_OPCODE_WRITE, 1, 0, 0, IOVM1_TARGET_SNESCMD),
+    };
+
+    r = iovm1_load(&vm, sizeof(prgm), prgm);
+    VERIFY_EQ_INT(0, r, "iovm1_load() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_state(&vm), "state");
+
+    // first execution initializes registers:
+    r = iovm1_exec_step(&vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_state(&vm), "state");
+
+    // SETADDR:
+    r = iovm1_exec_step(&vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_state(&vm), "state");
+    VERIFY_EQ_INT(0xF50D00, (int) fake_target[IOVM1_TARGET_SRAM].address, "sram address");
+
+    // SETADDR:
+    r = iovm1_exec_step(&vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_state(&vm), "state");
+    VERIFY_EQ_INT(0x2DFF, (int) fake_target[IOVM1_TARGET_SNESCMD].address, "snescmd address");
+
+    // READ:
+    fake_target[IOVM1_TARGET_SRAM].expected_read = 0x11;
+    r = iovm1_exec_step(&vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_READ_LOOP_ITER, iovm1_state(&vm), "state");
+
+    // performs READ:
+    r = iovm1_exec_step(&vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_READ_LOOP_END, iovm1_state(&vm), "state");
+
+    // verify invocations:
+    VERIFY_EQ_INT(2, fake_iovm1_target_set_address.count, "iovm1_target_set_address() invocations");
+
+    VERIFY_EQ_INT(1, fake_iovm1_target_read.count, "iovm1_target_read() invocations");
+    VERIFY_EQ_INT(IOVM1_TARGET_SRAM, fake_iovm1_target_read.target, "iovm1_target_read(_, target, _, _)");
+    VERIFY_EQ_INT(1, fake_iovm1_target_read.advance, "iovm1_target_read(_, _, advance, _)");
+    VERIFY_EQ_INT(0x11, (int) *fake_iovm1_target_read.o_data, "iovm1_target_read(_, _, _, *o_data)");
+
+    VERIFY_EQ_INT(0, fake_iovm1_target_write.count, "iovm1_target_write() invocations");
+    VERIFY_EQ_INT(1, fake_iovm1_emit.count, "iovm1_emit() invocations");
+
+    // verify expected behavior:
+    VERIFY_EQ_INT(0xF50D01, (int) fake_target[IOVM1_TARGET_SRAM].address, "sram address");
+    VERIFY_EQ_INT(0x11, (int) fake_last_emitted, "byte emitted");
+
+    // WRITE:
+    r = iovm1_exec_step(&vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_WRITE_LOOP_ITER, iovm1_state(&vm), "state");
+
+    // WRITE perform:
+    r = iovm1_exec_step(&vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_WRITE_LOOP_END, iovm1_state(&vm), "state");
+
+    // verify invocations:
+    VERIFY_EQ_INT(2, fake_iovm1_target_set_address.count, "iovm1_target_set_address() invocations");
+    VERIFY_EQ_INT(1, fake_iovm1_target_read.count, "iovm1_target_read() invocations");
+
+    VERIFY_EQ_INT(1, fake_iovm1_target_write.count, "iovm1_target_write() invocations");
+    VERIFY_EQ_INT(IOVM1_TARGET_SNESCMD, fake_iovm1_target_write.target, "iovm1_target_write(_, target, _, _)");
+    VERIFY_EQ_INT(1, fake_iovm1_target_write.advance, "iovm1_target_write(_, _, advance, _)");
+    VERIFY_EQ_INT(0x11, (int) fake_iovm1_target_write.data, "iovm1_target_write(_, _, _, data)");
+
+    VERIFY_EQ_INT(1, fake_iovm1_emit.count, "iovm1_emit() invocations");
+
+    // verify expected behavior:
+    VERIFY_EQ_INT(0xF50D01, (int) fake_target[IOVM1_TARGET_SRAM].address, "sram address");
+    VERIFY_EQ_INT(0x2E00, (int) fake_target[IOVM1_TARGET_SNESCMD].address, "snescmd address");
+    VERIFY_EQ_INT(0x11, (int) fake_target[IOVM1_TARGET_SNESCMD].last_write, "snescmd last write");
+
+    // should end:
+    r = iovm1_exec_step(&vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_ENDED, iovm1_state(&vm), "state");
+
+    return 0;
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////
 // main runner:
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -806,6 +907,7 @@ int run_test_suite() {
     run_test(test_read_repeat_non_immed_snescmd)
     run_test(test_write_non_repeat_immed_sram)
     run_test(test_write_non_repeat_immed_snescmd)
+    run_test(test_read_sram_m_write_snescmd)
 
     return 0;
 }
