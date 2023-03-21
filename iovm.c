@@ -135,10 +135,12 @@ int iovm1_response_size(struct iovm1_t *vm, uint32_t *o_size) {
                 p++;
                 break;
             case IOVM1_OPCODE_READ: {
-                int c = 1;
+                int c;
                 if (IOVM1_INST_REPEAT(x)) {
                     c = vm->data[p++];
                     if (c == 0) { c = 256; }
+                } else {
+                    c = 1;
                 }
                 // calculate the size of the response:
                 size += c;
