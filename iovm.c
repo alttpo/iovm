@@ -183,7 +183,6 @@ int iovm1_reset(struct iovm1_t *vm) {
 
 int iovm1_exec_step(struct iovm1_t *vm) {
     enum iovm1_opcode_e o;
-    enum iovm1_target_e t;
     int r;
 
     switch (s) {
@@ -211,8 +210,11 @@ int iovm1_exec_step(struct iovm1_t *vm) {
                     uint32_t lo = d[p++];
                     uint32_t hi = d[p++];
                     uint32_t bk = d[p++];
-                    t = IOVM1_INST_TARGET(x);
-                    r = iovm1_target_set_address(vm, t, lo | (hi << 8) | (bk << 16));
+                    r = iovm1_target_set_address(
+                        vm,
+                        IOVM1_INST_TARGET(x),
+                        lo | (hi << 8) | (bk << 16)
+                    );
                     if (r) {
                         s = IOVM1_STATE_ERRORED;
                         return r;
@@ -295,10 +297,38 @@ int iovm1_exec_step(struct iovm1_t *vm) {
             }
             return 0;
         case IOVM1_STATE_WAITING_WHILE_NEQ:
-            // TODO
+            // read from target and do not advance address:
+            r = iovm1_target_read(
+                vm,
+                IOVM1_INST_TARGET(x),
+                0,
+                &m
+            );
+            if (r) {
+                s = IOVM1_STATE_ERRORED;
+                return r;
+            }
+
+            if (m == q) {
+                s = IOVM1_STATE_EXECUTING;
+            }
             return 0;
         case IOVM1_STATE_WAITING_WHILE_EQ:
-            // TODO
+            // read from target and do not advance address:
+            r = iovm1_target_read(
+                vm,
+                IOVM1_INST_TARGET(x),
+                0,
+                &m
+            );
+            if (r) {
+                s = IOVM1_STATE_ERRORED;
+                return r;
+            }
+
+            if (m != q) {
+                s = IOVM1_STATE_EXECUTING;
+            }
             return 0;
         case IOVM1_STATE_ENDED:
             return 0;
