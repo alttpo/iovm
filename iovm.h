@@ -1,7 +1,12 @@
 #ifndef SD2SNES_IOVM_H
 #define SD2SNES_IOVM_H
 
-#define IOVM1_MAX_SIZE 512
+// IOVM1_MAX_SIZE can be overridden
+#ifndef IOVM1_MAX_SIZE
+#  define IOVM1_MAX_SIZE 512
+#elif IOVM1_MAX_SIZE < 32
+#  error("IOVM1_MAX_SIZE must be at least 32 bytes")
+#endif
 
 #define IOVM1_INST_END          (0)
 #define IOVM1_INST_OPCODE(x)    ((x)&7)
