@@ -246,7 +246,7 @@ int iovm1_exec_step(struct iovm1_t *vm) {
                     s = IOVM1_STATE_WAITING_WHILE_EQ;
                     return 0;
             }
-            return 0;
+            return -1;
         case IOVM1_STATE_READING:
             if (IOVM1_INST_IMMED(x)) {
                 m = d[p++];
