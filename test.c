@@ -189,6 +189,52 @@ int test_end() {
     return 0;
 }
 
+int test_read_non_repeat_immed() {
+    int r;
+    struct iovm1_t vm;
+    int target = IOVM1_TARGET_SRAM;
+    uint8_t prgm[] = {
+        IOVM1_MKINST(IOVM1_OPCODE_READ, 1, 0, 1, target),
+        0x11
+    };
+
+    r = iovm1_load(&vm, sizeof(prgm), prgm);
+    VERIFY_EQ_INT(0, r, "iovm1_load() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_state(&vm), "state");
+
+    // first execution initializes registers:
+    r = iovm1_exec_step(&vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_EXECUTING, iovm1_state(&vm), "state");
+
+    // entered READING state:
+    r = iovm1_exec_step(&vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_READING, iovm1_state(&vm), "state");
+
+    // performs READ:
+    r = iovm1_exec_step(&vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_EXECUTING, iovm1_state(&vm), "state");
+
+    // verify invocations:
+    VERIFY_EQ_INT(0, fake_iovm1_target_set_address.count, "iovm1_target_set_address() invocations");
+    VERIFY_EQ_INT(0, fake_iovm1_target_read.count, "iovm1_target_read() invocations");
+    VERIFY_EQ_INT(0, fake_iovm1_target_write.count, "iovm1_target_write() invocations");
+    VERIFY_EQ_INT(1, fake_iovm1_emit.count, "iovm1_emit() invocations");
+
+    // verify expected behavior:
+    VERIFY_EQ_INT(0, (int) fake_target[target].address, "address");
+    VERIFY_EQ_INT(0x11, (int) fake_last_emitted, "byte emitted");
+
+    // should end:
+    r = iovm1_exec_step(&vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_ENDED, iovm1_state(&vm), "state");
+
+    return 0;
+}
+
 int test_read_non_repeat_non_immed_sram() {
     int r;
     struct iovm1_t vm;
@@ -421,6 +467,7 @@ int run_test_suite() {
     int r;
 
     run_test(test_end)
+    run_test(test_read_non_repeat_immed)
     run_test(test_read_non_repeat_non_immed_sram)
     run_test(test_read_non_repeat_non_immed_snescmd)
     run_test(test_write_non_repeat_immed_sram)
