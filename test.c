@@ -158,7 +158,7 @@ int iovm1_emit(struct iovm1_t *vm, uint8_t data) {
 // TEST CODE:
 ///////////////////////////////////////////////////////////////////////////////////////////
 
-int test_iovm1_response_size_0() {
+int test_iovm1_response_size_0(void) {
     int r;
     struct iovm1_t vm;
     uint32_t emit_size;
@@ -178,7 +178,7 @@ int test_iovm1_response_size_0() {
     return 0;
 }
 
-int test_iovm1_response_size_1() {
+int test_iovm1_response_size_1(void) {
     int r;
     struct iovm1_t vm;
     uint32_t emit_size;
@@ -199,7 +199,7 @@ int test_iovm1_response_size_1() {
     return 0;
 }
 
-int test_iovm1_response_size_512() {
+int test_iovm1_response_size_512(void) {
     int r;
     struct iovm1_t vm;
     uint32_t emit_size;
@@ -225,7 +225,7 @@ int test_iovm1_response_size_512() {
     return 0;
 }
 
-int test_end() {
+int test_end(void) {
     int r;
     struct iovm1_t vm;
     uint8_t prgm[] = {
@@ -255,7 +255,7 @@ int test_end() {
     return 0;
 }
 
-int test_read_non_repeat_immed() {
+int test_read_non_repeat_immed(void) {
     int r;
     struct iovm1_t vm;
     int target = IOVM1_TARGET_SRAM;
@@ -301,7 +301,7 @@ int test_read_non_repeat_immed() {
     return 0;
 }
 
-int test_read_repeat_immed() {
+int test_read_repeat_immed(void) {
     int r;
     struct iovm1_t vm;
     int target = IOVM1_TARGET_SRAM;
@@ -364,7 +364,7 @@ int test_read_repeat_immed() {
     return 0;
 }
 
-int test_read_repeat_256_immed() {
+int test_read_repeat_256_immed(void) {
     int r;
     struct iovm1_t vm;
     int target = IOVM1_TARGET_SRAM;
@@ -415,7 +415,7 @@ int test_read_repeat_256_immed() {
     return 0;
 }
 
-int test_read_non_repeat_non_immed_sram() {
+int test_read_non_repeat_non_immed_sram(void) {
     int r;
     struct iovm1_t vm;
     int target = IOVM1_TARGET_SRAM;
@@ -467,7 +467,7 @@ int test_read_non_repeat_non_immed_sram() {
     return 0;
 }
 
-int test_read_repeat_non_immed_sram() {
+int test_read_repeat_non_immed_sram(void) {
     int r;
     struct iovm1_t vm;
     int target = IOVM1_TARGET_SRAM;
@@ -541,7 +541,7 @@ int test_read_repeat_non_immed_sram() {
     return 0;
 }
 
-int test_read_non_repeat_non_immed_snescmd() {
+int test_read_non_repeat_non_immed_snescmd(void) {
     int r;
     struct iovm1_t vm;
     int target = IOVM1_TARGET_SNESCMD;
@@ -593,7 +593,7 @@ int test_read_non_repeat_non_immed_snescmd() {
     return 0;
 }
 
-int test_read_repeat_non_immed_snescmd() {
+int test_read_repeat_non_immed_snescmd(void) {
     int r;
     struct iovm1_t vm;
     int target = IOVM1_TARGET_SNESCMD;
@@ -666,7 +666,7 @@ int test_read_repeat_non_immed_snescmd() {
     return 0;
 }
 
-int test_write_non_repeat_immed_sram() {
+int test_write_non_repeat_immed_sram(void) {
     int r;
     struct iovm1_t vm;
     int target = IOVM1_TARGET_SRAM;
@@ -719,7 +719,7 @@ int test_write_non_repeat_immed_sram() {
     return 0;
 }
 
-int test_write_non_repeat_immed_snescmd() {
+int test_write_non_repeat_immed_snescmd(void) {
     int r;
     struct iovm1_t vm;
     int target = IOVM1_TARGET_SNESCMD;
@@ -772,7 +772,7 @@ int test_write_non_repeat_immed_snescmd() {
     return 0;
 }
 
-int test_read_sram_m_write_snescmd() {
+int test_read_sram_m_write_snescmd(void) {
     int r;
     struct iovm1_t vm;
     uint8_t prgm[] = {
@@ -891,7 +891,7 @@ int test_read_sram_m_write_snescmd() {
         } \
     }
 
-int run_test_suite() {
+int run_test_suite(void) {
     int r;
 
     run_test(test_iovm1_response_size_0)

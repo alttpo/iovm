@@ -19,7 +19,7 @@ instructions:
     x = all 8 instruction bits
 
 memory:
-    data[512]:  linear memory of procedure, up to 512 bytes
+    data[]:     linear memory of procedure, at least 64 bytes
     A[2]:       address for each target, indexed by `t`
 
  registers:
