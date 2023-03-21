@@ -158,6 +158,73 @@ int iovm1_emit(struct iovm1_t *vm, uint8_t data) {
 // TEST CODE:
 ///////////////////////////////////////////////////////////////////////////////////////////
 
+int test_iovm1_response_size_0() {
+    int r;
+    struct iovm1_t vm;
+    uint32_t emit_size;
+    uint8_t prgm[] = {
+        IOVM1_INST_END
+    };
+
+    r = iovm1_load(&vm, sizeof(prgm), prgm);
+    VERIFY_EQ_INT(0, r, "iovm1_load() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_state(&vm), "state");
+
+    // first execution initializes registers:
+    r = iovm1_response_size(&vm, &emit_size);
+    VERIFY_EQ_INT(0, r, "iovm1_response_size() return value");
+    VERIFY_EQ_INT(0, emit_size, "emit_size");
+
+    return 0;
+}
+
+int test_iovm1_response_size_1() {
+    int r;
+    struct iovm1_t vm;
+    uint32_t emit_size;
+    uint8_t prgm[] = {
+        IOVM1_MKINST(IOVM1_OPCODE_READ, 0, 0, 0, IOVM1_TARGET_SRAM),
+        IOVM1_INST_END
+    };
+
+    r = iovm1_load(&vm, sizeof(prgm), prgm);
+    VERIFY_EQ_INT(0, r, "iovm1_load() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_state(&vm), "state");
+
+    // first execution initializes registers:
+    r = iovm1_response_size(&vm, &emit_size);
+    VERIFY_EQ_INT(0, r, "iovm1_response_size() return value");
+    VERIFY_EQ_INT(1, emit_size, "emit_size");
+
+    return 0;
+}
+
+int test_iovm1_response_size_512() {
+    int r;
+    struct iovm1_t vm;
+    uint32_t emit_size;
+    uint8_t prgm[] = {
+        IOVM1_MKINST(IOVM1_OPCODE_READ, 1, 1, 0, IOVM1_TARGET_SRAM),
+        0, // 256
+        IOVM1_MKINST(IOVM1_OPCODE_READ, 1, 1, 0, IOVM1_TARGET_SRAM),
+        0, // 256
+        IOVM1_MKINST(IOVM1_OPCODE_WRITE, 1, 1, 0, IOVM1_TARGET_SRAM),
+        0, // 256
+        IOVM1_INST_END
+    };
+
+    r = iovm1_load(&vm, sizeof(prgm), prgm);
+    VERIFY_EQ_INT(0, r, "iovm1_load() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_state(&vm), "state");
+
+    // first execution initializes registers:
+    r = iovm1_response_size(&vm, &emit_size);
+    VERIFY_EQ_INT(0, r, "iovm1_response_size() return value");
+    VERIFY_EQ_INT(512, emit_size, "emit_size");
+
+    return 0;
+}
+
 int test_end() {
     int r;
     struct iovm1_t vm;
@@ -726,6 +793,9 @@ int test_write_non_repeat_immed_snescmd() {
 int run_test_suite() {
     int r;
 
+    run_test(test_iovm1_response_size_0)
+    run_test(test_iovm1_response_size_1)
+    run_test(test_iovm1_response_size_512)
     run_test(test_end)
     run_test(test_read_non_repeat_immed)
     run_test(test_read_repeat_immed)
