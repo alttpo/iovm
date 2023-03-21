@@ -163,7 +163,7 @@ int iovm1_response_size(struct iovm1_t *vm, uint32_t *o_size) {
         }
     }
 
-exit:
+    exit:
     *o_size = size;
     return 0;
 }
@@ -209,9 +209,15 @@ int iovm1_exec_step(struct iovm1_t *vm) {
             m = 0;
             q = 0;
 
-            s = IOVM1_STATE_EXECUTING;
-            return 0;
-        case IOVM1_STATE_EXECUTING:
+            s = IOVM1_STATE_EXECUTE_NEXT;
+            break;
+        case IOVM1_STATE_READ_LOOP_END:
+        case IOVM1_STATE_WRITE_LOOP_END:
+        case IOVM1_STATE_WHILE_NEQ_LOOP_END:
+        case IOVM1_STATE_WHILE_EQ_LOOP_END:
+            s = IOVM1_STATE_EXECUTE_NEXT;
+            // purposely fall through to execute next instruction:
+        case IOVM1_STATE_EXECUTE_NEXT:
             x = d[p++];
             if (x == IOVM1_INST_END) {
                 s = IOVM1_STATE_ENDED;
@@ -232,16 +238,16 @@ int iovm1_exec_step(struct iovm1_t *vm) {
                         s = IOVM1_STATE_ERRORED;
                         return r;
                     }
-                    return 0;
+                    break;
                 }
                 case IOVM1_OPCODE_WHILE_NEQ:
                     q = d[p++];
                     if (IOVM1_INST_IMMED(x)) {
-                        s = IOVM1_STATE_WAITING_WHILE_EQ;
+                        s = IOVM1_STATE_WHILE_EQ_LOOP_ITER;
                     } else {
-                        s = IOVM1_STATE_WAITING_WHILE_NEQ;
+                        s = IOVM1_STATE_WHILE_NEQ_LOOP_ITER;
                     }
-                    return 0;
+                    break;
                 case IOVM1_OPCODE_READ:
                 case IOVM1_OPCODE_WRITE:
                     if (IOVM1_INST_REPEAT(x)) {
@@ -253,14 +259,17 @@ int iovm1_exec_step(struct iovm1_t *vm) {
                     //assert(c > 0);
 
                     if (o == IOVM1_OPCODE_READ) {
-                        s = IOVM1_STATE_READING;
+                        s = IOVM1_STATE_READ_LOOP_ITER;
                     } else {
-                        s = IOVM1_STATE_WRITING;
+                        s = IOVM1_STATE_WRITE_LOOP_ITER;
                     }
-                    return 0;
+                    break;
+                default:
+                    // unknown opcode:
+                    return -1;
             }
-            return -1;
-        case IOVM1_STATE_READING:
+            break;
+        case IOVM1_STATE_READ_LOOP_ITER:
             if (IOVM1_INST_IMMED(x)) {
                 m = d[p++];
             } else {
@@ -285,10 +294,10 @@ int iovm1_exec_step(struct iovm1_t *vm) {
             }
 
             if (--c == 0) {
-                s = IOVM1_STATE_EXECUTING;
+                s = IOVM1_STATE_READ_LOOP_END;
             }
-            return 0;
-        case IOVM1_STATE_WRITING:
+            break;
+        case IOVM1_STATE_WRITE_LOOP_ITER:
             if (IOVM1_INST_IMMED(x)) {
                 m = d[p++];
             }
@@ -306,10 +315,10 @@ int iovm1_exec_step(struct iovm1_t *vm) {
             }
 
             if (--c == 0) {
-                s = IOVM1_STATE_EXECUTING;
+                s = IOVM1_STATE_WRITE_LOOP_END;
             }
-            return 0;
-        case IOVM1_STATE_WAITING_WHILE_NEQ:
+            break;
+        case IOVM1_STATE_WHILE_NEQ_LOOP_ITER:
             // read from target and do not advance address:
             r = iovm1_target_read(
                 vm,
@@ -323,10 +332,10 @@ int iovm1_exec_step(struct iovm1_t *vm) {
             }
 
             if (m == q) {
-                s = IOVM1_STATE_EXECUTING;
+                s = IOVM1_STATE_WHILE_NEQ_LOOP_END;
             }
-            return 0;
-        case IOVM1_STATE_WAITING_WHILE_EQ:
+            break;
+        case IOVM1_STATE_WHILE_EQ_LOOP_ITER:
             // read from target and do not advance address:
             r = iovm1_target_read(
                 vm,
@@ -340,9 +349,9 @@ int iovm1_exec_step(struct iovm1_t *vm) {
             }
 
             if (m != q) {
-                s = IOVM1_STATE_EXECUTING;
+                s = IOVM1_STATE_WHILE_EQ_LOOP_END;
             }
-            return 0;
+            break;
         case IOVM1_STATE_ENDED:
             return 0;
         case IOVM1_STATE_ERRORED:
@@ -350,6 +359,7 @@ int iovm1_exec_step(struct iovm1_t *vm) {
         default:
             return -1;
     }
+    return 0;
 }
 
 #undef m
