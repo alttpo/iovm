@@ -10,10 +10,10 @@ int tests_failed = 0;
 #define STRINGIZE(x) STRINGIZE_DETAIL(x)
 
 #define VERIFY_EQ_INT(expected, got, name) \
-    if ((expected) != (got)) { \
+    do if ((expected) != (got)) { \
         fprintf(stderr, "L" STRINGIZE(__LINE__) ": expected " name " of %d 0x%x; got %d 0x%x\n", expected, expected, got, got); \
         return 1; \
-    }
+    } while (0)
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 // FAKE implementation:
@@ -741,8 +741,6 @@ int run_test_suite() {
 }
 
 int main(int argc, char **argv) {
-    int r;
-
     (void) argc;
     (void) argv;
 
