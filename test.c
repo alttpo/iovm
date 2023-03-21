@@ -7,9 +7,12 @@
 int tests_passed = 0;
 int tests_failed = 0;
 
+#define STRINGIZE_DETAIL(x) #x
+#define STRINGIZE(x) STRINGIZE_DETAIL(x)
+
 #define VERIFY_EQ_INT(expected, got, name) \
     if ((expected) != (got)) { \
-        fprintf(stderr, "expected " name " of %d 0x%x; got %d 0x%x\n", expected, expected, got, got); \
+        fprintf(stderr, "L" STRINGIZE(__LINE__) ": expected " name " of %d 0x%x; got %d 0x%x\n", expected, expected, got, got); \
         return 1; \
     }
 
