@@ -166,11 +166,6 @@ int iovm1_get_userdata(struct iovm1_t *vm, void **o_userdata) {
     return 0;
 }
 
-int iovm1_state(struct iovm1_t *vm, enum iovm1_state_e *o_state) {
-    *o_state = s;
-    return 0;
-}
-
 #define x vm->x
 #define p vm->p
 #define c vm->c

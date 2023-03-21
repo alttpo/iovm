@@ -56,7 +56,7 @@ int iovm1_load(struct iovm1_t *vm, unsigned len, const uint8_t *data);
 int iovm1_response_size(struct iovm1_t *vm, uint32_t *size);
 int iovm1_set_userdata(struct iovm1_t *vm, void *userdata);
 int iovm1_get_userdata(struct iovm1_t *vm, void **o_userdata);
-int iovm1_state(struct iovm1_t *vm, enum iovm1_state_e *o_state);
+static inline enum iovm1_state_e iovm1_state(struct iovm1_t *vm) { return vm->s; }
 int iovm1_reset(struct iovm1_t *vm);
 int iovm1_exec_step(struct iovm1_t *vm);
 
