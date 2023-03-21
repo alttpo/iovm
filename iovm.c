@@ -95,11 +95,27 @@ opcodes (o):
 #define d vm->data
 #define s vm->s
 
-int iovm1_load(struct iovm1_t *vm, unsigned len, const uint8_t *data) {
-    s = IOVM1_STATE_UNLOADED;
+void iovm1_init(struct iovm1_t *vm) {
+    s = IOVM1_STATE_INIT;
+
+    vm->x = 0;
+
+    vm->p = 0;
+    vm->c = 0;
+    vm->m = 0;
+    vm->q = 0;
+
+    vm->userdata = 0;
+    vm->emit_size = 0;
 
     // initialize program memory:
     memset(d, 0, IOVM1_MAX_SIZE);
+}
+
+int iovm1_load(struct iovm1_t *vm, unsigned len, const uint8_t *data) {
+    if (s != IOVM1_STATE_INIT) {
+        return -1;
+    }
 
     // error checking:
     if (len > IOVM1_MAX_SIZE) {
@@ -114,8 +130,8 @@ int iovm1_load(struct iovm1_t *vm, unsigned len, const uint8_t *data) {
     return 0;
 }
 
-int iovm1_response_size(struct iovm1_t *vm, uint32_t *o_size) {
-    if (s == IOVM1_STATE_UNLOADED) {
+int iovm1_verify(struct iovm1_t *vm) {
+    if (s != IOVM1_STATE_LOADED) {
         return -1;
     }
 
@@ -124,8 +140,9 @@ int iovm1_response_size(struct iovm1_t *vm, uint32_t *o_size) {
     while (p < IOVM1_MAX_SIZE) {
         uint8_t x = d[p++];
         if (x == IOVM1_INST_END) {
-            goto exit;
+            break;
         }
+
         enum iovm1_opcode_e o = IOVM1_INST_OPCODE(x);
         switch (o) {
             case IOVM1_OPCODE_SETADDR:
@@ -167,8 +184,18 @@ int iovm1_response_size(struct iovm1_t *vm, uint32_t *o_size) {
         }
     }
 
-    exit:
-    *o_size = size;
+    vm->emit_size = size;
+    s = IOVM1_STATE_VERIFIED;
+    return 0;
+}
+
+int iovm1_emit_size(struct iovm1_t *vm, uint32_t *o_size) {
+    if (s < IOVM1_STATE_VERIFIED) {
+        return -1;
+    }
+
+    *o_size = vm->emit_size;
+
     return 0;
 }
 
@@ -189,11 +216,11 @@ int iovm1_get_userdata(struct iovm1_t *vm, void **o_userdata) {
 #define q vm->q
 
 int iovm1_reset(struct iovm1_t *vm) {
-    if (s == IOVM1_STATE_UNLOADED) {
+    if (s < IOVM1_STATE_VERIFIED) {
         return -1;
     }
 
-    s = IOVM1_STATE_LOADED;
+    s = IOVM1_STATE_RESET;
     return 0;
 }
 
@@ -201,10 +228,19 @@ int iovm1_exec_step(struct iovm1_t *vm) {
     enum iovm1_opcode_e o;
     int r;
 
+    if (s < IOVM1_STATE_VERIFIED) {
+        return -1;
+    }
+
     switch (s) {
-        case IOVM1_STATE_UNLOADED:
-            return -1;
+        case IOVM1_STATE_INIT:
         case IOVM1_STATE_LOADED:
+            // must be VERIFIED before executing:
+            return -1;
+        case IOVM1_STATE_VERIFIED:
+            s = IOVM1_STATE_RESET;
+            // purposely fall through to initialize registers:
+        case IOVM1_STATE_RESET:
             // initialize registers:
             x = 0;
 

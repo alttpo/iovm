@@ -30,8 +30,10 @@ enum iovm1_target_e {
 };
 
 enum iovm1_state_e {
-    IOVM1_STATE_UNLOADED,
+    IOVM1_STATE_INIT,
     IOVM1_STATE_LOADED,
+    IOVM1_STATE_VERIFIED,
+    IOVM1_STATE_RESET,
     IOVM1_STATE_EXECUTE_NEXT,
     IOVM1_STATE_READ_LOOP_ITER,
     IOVM1_STATE_READ_LOOP_END,
@@ -57,16 +59,21 @@ struct iovm1_t {
 
     void    *userdata;
 
+    uint32_t emit_size;
     uint8_t  data[IOVM1_MAX_SIZE];
 };
 
 // core functions:
 
+void iovm1_init(struct iovm1_t *vm);
 int iovm1_load(struct iovm1_t *vm, unsigned len, const uint8_t *data);
-int iovm1_response_size(struct iovm1_t *vm, uint32_t *size);
+int iovm1_verify(struct iovm1_t *vm);
+
+int iovm1_emit_size(struct iovm1_t *vm, uint32_t *size);
 int iovm1_set_userdata(struct iovm1_t *vm, void *userdata);
 int iovm1_get_userdata(struct iovm1_t *vm, void **o_userdata);
 static inline enum iovm1_state_e iovm1_state(struct iovm1_t *vm) { return vm->s; }
+
 int iovm1_reset(struct iovm1_t *vm);
 int iovm1_exec_step(struct iovm1_t *vm);
 
