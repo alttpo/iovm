@@ -3,21 +3,20 @@
 
 #define IOVM1_MAX_SIZE 512
 
-#define IOVM1_INST_OPCODE(x)     ((x)&7)
-#define IOVM1_INST_ADVANCE(x)    (((x)>>3)&1)
-#define IOVM1_INST_REPEAT(x)     (((x)>>4)&1)
-#define IOVM1_INST_IMMED(x)      (((x)>>5)&1)
-#define IOVM1_INST_TARGET(x)     (((x)>>6)&3)
+#define IOVM1_INST_END          (0)
+#define IOVM1_INST_OPCODE(x)    ((x)&7)
+#define IOVM1_INST_ADVANCE(x)   (((x)>>4)&1)
+#define IOVM1_INST_REPEAT(x)    (((x)>>5)&1)
+#define IOVM1_INST_IMMED(x)     (((x)>>6)&1)
+#define IOVM1_INST_TARGET(x)    (((x)>>7)&1)
 
-#define IOVM1_MKINST(o, v, r, i, t) ((uint8_t)(o&7) | ((uint8_t)(v&1)<<3) | ((uint8_t)(r&1)<<4) | ((uint8_t)(i&1)<<5) | ((uint8_t)(t&3)<<6))
+#define IOVM1_MKINST(o, v, r, i, t) ((uint8_t)(o&7) | ((uint8_t)(v&1)<<4) | ((uint8_t)(r&1)<<5) | ((uint8_t)(i&1)<<6) | ((uint8_t)(t&1)<<7))
 
 enum iovm1_opcode_e {
-    IOVM1_OPCODE_END,
-    IOVM1_OPCODE_READ,
-    IOVM1_OPCODE_WRITE,
     IOVM1_OPCODE_SETADDR,
     IOVM1_OPCODE_WHILE_NEQ,
-    IOVM1_OPCODE_WHILE_EQ
+    IOVM1_OPCODE_READ,
+    IOVM1_OPCODE_WRITE
 };
 
 enum iovm1_target_e {
@@ -31,8 +30,8 @@ enum iovm1_state_e {
     IOVM1_STATE_EXECUTING,
     IOVM1_STATE_READING,
     IOVM1_STATE_WRITING,
-    IOVM1_STATE_WAITING_WHILE_EQ,
     IOVM1_STATE_WAITING_WHILE_NEQ,
+    IOVM1_STATE_WAITING_WHILE_EQ,
     IOVM1_STATE_ENDED,
     IOVM1_STATE_ERRORED
 };
@@ -45,7 +44,7 @@ struct iovm1_t {
     int     p;  // pointer to data[]
     int     c;  // counter
     uint8_t m;  // M byte
-    uint8_t q;  // comparison byte for WHILE_EQ and WHILE_NEQ
+    uint8_t q;  // comparison byte for WHILE_NEQ
 
     void    *userdata;
 

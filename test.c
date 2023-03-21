@@ -162,7 +162,7 @@ int test_end() {
     int r;
     struct iovm1_t vm;
     uint8_t prgm[] = {
-        IOVM1_MKINST(IOVM1_OPCODE_END, 0, 0, 0, 0)
+        IOVM1_INST_END
     };
 
     r = iovm1_load(&vm, sizeof(prgm), prgm);

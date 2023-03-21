@@ -5,32 +5,50 @@
 /*
 executes a VM procedure to accomplish custom tasks which require low-latency access to FPGA.
 
-registers:
-    P:          points to current byte in program stream
-    M:          current data byte
-    C:          loop counter
-    A[4]:       holds address for each target, indexed by `t`
-
 instructions:
 
-  [tt i r v ooo] {data[...]}
+   x x x x x xxx
+  [t i r v - ooo] {data[...]}
 
     o = opcode (0..7)
     v = advance target address after read/write
     r = repeat mode
-    i = immediate data mode
-    t = target (0 = SRAM, 1 = SNESCMD, 2 = reserved, 3 = reserved)
+    i = immediate data mode (or invert mode)
+    t = target (0 = SRAM, 1 = SNESCMD)
+    - = reserved
+    x = all 8 instruction bits
+
+memory:
+    data[512]:  linear memory of procedure, up to 512 bytes
+    A[2]:       address for each target, indexed by `t`
+
+ registers:
+    P:          points to current byte in `data`
+    M:          data byte
+    Q:          comparison byte
+    C:          loop counter
 
 opcodes (o):
-  0=END:        ends procedure
-
-  1=SETADDR:    sets target address (24-bit)
+  0=SETADDR:    sets target address (24-bit)
+                    // all instruction bits == 0 ENDS the procedure:
+                    if x==0 {
+                        END
+                    }
                     set lo = data[P++]
                     set hi = data[P++]
                     set bk = data[P++]
                     set A[t] = lo | (hi<<8) | (bk<<16)
 
-  2=READ:       reads bytes into USB response packet
+  1=WHILE_NEQ:  waits while read(t) != data[P]
+                    set Q to data[P++]
+                    // i flag inverts check from `!=` to `==`
+                    if i==1 {
+                        while ((M = read(t)) == Q) ;
+                    } else {
+                        while ((M = read(t)) != Q) ;
+                    }
+
+  2=READ:       reads bytes and emits into USB response packet
                     if r==1 {
                         set C to data[P++] (translate 0 -> 256, else use 1..255)
                     } else {
@@ -65,13 +83,7 @@ opcodes (o):
                           elseif v==1 { set A[t] += 1 }
                     }
 
-  4=WHILE_NEQ:  waits while read(t) != data[P]
-                    while ((M = read(t)) != data[P]) ;
-
-  5=WHILE_EQ:   waits while read(t) == data[P]
-                    while ((M = read(t)) == data[P]) ;
-
-  6..7:         reserved
+  4..7:         reserved
 
  */
 
@@ -112,14 +124,17 @@ int iovm1_response_size(struct iovm1_t *vm, uint32_t *o_size) {
     uint32_t size = 0;
     while (p < IOVM1_MAX_SIZE) {
         uint8_t x = d[p++];
+        if (x == IOVM1_INST_END) {
+            goto exit;
+        }
         enum iovm1_opcode_e o = IOVM1_INST_OPCODE(x);
         switch (o) {
-            case IOVM1_OPCODE_END:
-                goto exit;
-            case IOVM1_OPCODE_SETADDR: {
+            case IOVM1_OPCODE_SETADDR:
                 p += 3;
                 break;
-            }
+            case IOVM1_OPCODE_WHILE_NEQ:
+                p++;
+                break;
             case IOVM1_OPCODE_READ: {
                 int c = 1;
                 if (IOVM1_INST_REPEAT(x)) {
@@ -143,15 +158,12 @@ int iovm1_response_size(struct iovm1_t *vm, uint32_t *o_size) {
                     p += c;
                 }
             }
-            case IOVM1_OPCODE_WHILE_EQ:
-            case IOVM1_OPCODE_WHILE_NEQ: {
-                p++;
-                break;
-            }
+            default:
+                return -1;
         }
     }
 
-    exit:
+exit:
     *o_size = size;
     return 0;
 }
@@ -201,11 +213,12 @@ int iovm1_exec_step(struct iovm1_t *vm) {
             return 0;
         case IOVM1_STATE_EXECUTING:
             x = d[p++];
+            if (x == IOVM1_INST_END) {
+                s = IOVM1_STATE_ENDED;
+                return 0;
+            }
             o = IOVM1_INST_OPCODE(x);
             switch (o) {
-                case IOVM1_OPCODE_END:
-                    s = IOVM1_STATE_ENDED;
-                    return 0;
                 case IOVM1_OPCODE_SETADDR: {
                     uint32_t lo = d[p++];
                     uint32_t hi = d[p++];
@@ -221,6 +234,14 @@ int iovm1_exec_step(struct iovm1_t *vm) {
                     }
                     return 0;
                 }
+                case IOVM1_OPCODE_WHILE_NEQ:
+                    q = d[p++];
+                    if (IOVM1_INST_IMMED(x)) {
+                        s = IOVM1_STATE_WAITING_WHILE_EQ;
+                    } else {
+                        s = IOVM1_STATE_WAITING_WHILE_NEQ;
+                    }
+                    return 0;
                 case IOVM1_OPCODE_READ:
                 case IOVM1_OPCODE_WRITE:
                     if (IOVM1_INST_REPEAT(x)) {
@@ -236,14 +257,6 @@ int iovm1_exec_step(struct iovm1_t *vm) {
                     } else {
                         s = IOVM1_STATE_WRITING;
                     }
-                    return 0;
-                case IOVM1_OPCODE_WHILE_NEQ:
-                    q = d[p++];
-                    s = IOVM1_STATE_WAITING_WHILE_NEQ;
-                    return 0;
-                case IOVM1_OPCODE_WHILE_EQ:
-                    q = d[p++];
-                    s = IOVM1_STATE_WAITING_WHILE_EQ;
                     return 0;
             }
             return -1;
