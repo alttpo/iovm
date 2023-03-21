@@ -9,7 +9,7 @@
 #define IOVM1_INST_IMMED(x)      (((x)>>5)&1)
 #define IOVM1_INST_TARGET(x)     (((x)>>6)&3)
 
-#define IOVM1_MKOPCODE(o, v, r, i, t) ((uint8_t)(o&7) | (uint8_t)(v&1)<<3 | (uint8_t)(r&1)<<4 | (uint8_t)(i&1)<<5 | (uint8_t)(t&3)<<6)
+#define IOVM1_MKINST(o, v, r, i, t) ((uint8_t)(o&7) | ((uint8_t)(v&1)<<3) | ((uint8_t)(r&1)<<4) | ((uint8_t)(i&1)<<5) | ((uint8_t)(t&3)<<6))
 
 enum iovm1_opcode_e {
     IOVM1_OPCODE_END,
