@@ -44,8 +44,7 @@ enum iovm1_state_e {
     IOVM1_STATE_WHILE_NEQ_LOOP_END,
     IOVM1_STATE_WHILE_EQ_LOOP_ITER,
     IOVM1_STATE_WHILE_EQ_LOOP_END,
-    IOVM1_STATE_ENDED,
-    IOVM1_STATE_ERRORED
+    IOVM1_STATE_ENDED
 };
 
 struct iovm1_t {
@@ -59,8 +58,10 @@ struct iovm1_t {
     uint8_t q;  // comparison byte for WHILE_NEQ
 
     void    *userdata;
+    int     user_last_error;
 
     uint32_t    emit_size;
+
     unsigned    stream_offs;
     uint8_t     data[IOVM1_MAX_SIZE];
 };
@@ -76,11 +77,14 @@ int iovm1_verify(struct iovm1_t *vm);
 int iovm1_emit_size(struct iovm1_t *vm, uint32_t *size);
 int iovm1_set_userdata(struct iovm1_t *vm, void *userdata);
 int iovm1_get_userdata(struct iovm1_t *vm, void **o_userdata);
-static inline enum iovm1_state_e iovm1_state(struct iovm1_t *vm) { return vm->s; }
 
 int iovm1_exec_reset(struct iovm1_t *vm);
 int iovm1_exec_step(struct iovm1_t *vm);
 int iovm1_exec_while_abort(struct iovm1_t *vm);
+
+static inline enum iovm1_state_e iovm1_exec_state(struct iovm1_t *vm) { return vm->s; }
+static inline int iovm1_exec_user_last_error(struct iovm1_t *vm) { return vm->user_last_error; }
+static inline void iovm1_exec_user_last_error_clear(struct iovm1_t *vm) { vm->user_last_error = 0; }
 
 // external interface:
 
