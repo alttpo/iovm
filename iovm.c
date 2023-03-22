@@ -107,6 +107,7 @@ void iovm1_init(struct iovm1_t *vm) {
 
     vm->userdata = 0;
     vm->emit_size = 0;
+    vm->stream_offs = 0;
 
     // initialize program memory:
     memset(d, 0, IOVM1_MAX_SIZE);
@@ -117,13 +118,43 @@ int iovm1_load(struct iovm1_t *vm, const uint8_t *data, unsigned len) {
         return -1;
     }
 
-    // error checking:
+    // bounds checking:
     if (len > IOVM1_MAX_SIZE) {
         return -1;
     }
 
     // copy in program data:
     memcpy(d, data, len);
+
+    s = IOVM1_STATE_LOADED;
+
+    return 0;
+}
+
+int iovm1_load_stream(struct iovm1_t *vm, const uint8_t *data, unsigned len) {
+    if (s > IOVM1_STATE_LOAD_STREAMING) {
+        return -1;
+    }
+
+    // bounds checking:
+    if (vm->stream_offs + len > IOVM1_MAX_SIZE) {
+        return -1;
+    }
+
+    // copy in program data:
+    memcpy(d + vm->stream_offs, data, len);
+
+    vm->stream_offs += len;
+
+    s = IOVM1_STATE_LOAD_STREAMING;
+
+    return 0;
+}
+
+int iovm1_load_stream_complete(struct iovm1_t *vm) {
+    if (s != IOVM1_STATE_LOAD_STREAMING) {
+        return -1;
+    }
 
     s = IOVM1_STATE_LOADED;
 

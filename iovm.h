@@ -31,6 +31,7 @@ enum iovm1_target_e {
 
 enum iovm1_state_e {
     IOVM1_STATE_INIT,
+    IOVM1_STATE_LOAD_STREAMING,
     IOVM1_STATE_LOADED,
     IOVM1_STATE_VERIFIED,
     IOVM1_STATE_RESET,
@@ -59,14 +60,17 @@ struct iovm1_t {
 
     void    *userdata;
 
-    uint32_t emit_size;
-    uint8_t  data[IOVM1_MAX_SIZE];
+    uint32_t    emit_size;
+    unsigned    stream_offs;
+    uint8_t     data[IOVM1_MAX_SIZE];
 };
 
 // core functions:
 
 void iovm1_init(struct iovm1_t *vm);
 int iovm1_load(struct iovm1_t *vm, const uint8_t *data, unsigned len);
+int iovm1_load_stream(struct iovm1_t *vm, const uint8_t *data, unsigned len);
+int iovm1_load_stream_complete(struct iovm1_t *vm);
 int iovm1_verify(struct iovm1_t *vm);
 
 int iovm1_emit_size(struct iovm1_t *vm, uint32_t *size);
