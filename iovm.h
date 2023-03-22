@@ -45,18 +45,27 @@ enum iovm1_state_e {
     IOVM1_STATE_ENDED
 };
 
+enum iovm1_error_e : int {
+    IOVM1_SUCCESS,
+    IOVM1_ERROR_ARG_OUT_OF_RANGE,
+    IOVM1_ERROR_VM_MUST_BE_VERIFIED,
+    IOVM1_ERROR_VM_UNKNOWN_OPCODE,
+    IOVM1_ERROR_VM_UNKNOWN_STATE,
+    IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE
+};
+
 struct iovm1_t {
-    enum iovm1_state_e  s;
+    enum iovm1_state_e  s;  // current state
 
-    uint8_t x;  // current instruction
+    uint8_t     x;  // current instruction byte
 
-    int     p;  // pointer to data[]
-    int     c;  // counter
-    uint8_t m;  // M byte
-    uint8_t q;  // comparison byte for WHILE_NEQ
+    int         p;  // pointer into data[]
+    int         c;  // counter
+    uint8_t     m;  // M register
+    uint8_t     q;  // comparison byte for WHILE_NEQ
 
-    void    *userdata;
-    int     user_last_error;
+    void        *userdata;
+    int         user_last_error;
 
     uint32_t    emit_size;
 
@@ -67,18 +76,18 @@ struct iovm1_t {
 // core functions:
 
 void iovm1_init(struct iovm1_t *vm);
-int iovm1_load(struct iovm1_t *vm, const uint8_t *data, unsigned len);
-int iovm1_load_stream(struct iovm1_t *vm, const uint8_t *data, unsigned len);
-int iovm1_load_stream_complete(struct iovm1_t *vm);
-int iovm1_verify(struct iovm1_t *vm);
+enum iovm1_error_e iovm1_load(struct iovm1_t *vm, const uint8_t *data, unsigned len);
+enum iovm1_error_e iovm1_load_stream(struct iovm1_t *vm, const uint8_t *data, unsigned len);
+enum iovm1_error_e iovm1_load_stream_complete(struct iovm1_t *vm);
+enum iovm1_error_e iovm1_verify(struct iovm1_t *vm);
 
-int iovm1_emit_size(struct iovm1_t *vm, uint32_t *size);
-int iovm1_set_userdata(struct iovm1_t *vm, void *userdata);
-int iovm1_get_userdata(struct iovm1_t *vm, void **o_userdata);
+enum iovm1_error_e iovm1_emit_size(struct iovm1_t *vm, uint32_t *size);
+enum iovm1_error_e iovm1_set_userdata(struct iovm1_t *vm, void *userdata);
+enum iovm1_error_e iovm1_get_userdata(struct iovm1_t *vm, void **o_userdata);
 
-int iovm1_exec_reset(struct iovm1_t *vm);
-int iovm1_exec_step(struct iovm1_t *vm);
-int iovm1_exec_while_abort(struct iovm1_t *vm);
+enum iovm1_error_e iovm1_exec_reset(struct iovm1_t *vm);
+enum iovm1_error_e iovm1_exec_step(struct iovm1_t *vm);
+enum iovm1_error_e iovm1_exec_while_abort(struct iovm1_t *vm);
 
 static inline enum iovm1_state_e iovm1_exec_state(struct iovm1_t *vm) { return vm->s; }
 static inline int iovm1_exec_user_last_error(struct iovm1_t *vm) { return vm->user_last_error; }
