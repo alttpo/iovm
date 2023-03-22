@@ -158,6 +158,54 @@ int iovm1_emit(struct iovm1_t *vm, uint8_t data) {
 // TEST CODE:
 ///////////////////////////////////////////////////////////////////////////////////////////
 
+int test_load_streaming(void) {
+    int r;
+    struct iovm1_t vm;
+    uint8_t prgm[256] = {};
+
+    for (int i = 0; i < 256; i++) {
+        prgm[i] = i % 17;
+    }
+
+    iovm1_init(&vm);
+
+    r = iovm1_load_stream(&vm, prgm, 64);
+    VERIFY_EQ_INT(0, r, "iovm1_load_stream() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_LOAD_STREAMING, iovm1_exec_state(&vm), "state");
+
+    r = iovm1_load_stream(&vm, prgm + 64, 64);
+    VERIFY_EQ_INT(0, r, "iovm1_load_stream() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_LOAD_STREAMING, iovm1_exec_state(&vm), "state");
+
+    r = iovm1_load_stream(&vm, prgm + 128, 64);
+    VERIFY_EQ_INT(0, r, "iovm1_load_stream() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_LOAD_STREAMING, iovm1_exec_state(&vm), "state");
+
+    r = iovm1_load_stream(&vm, prgm + 192, 64);
+    VERIFY_EQ_INT(0, r, "iovm1_load_stream() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_LOAD_STREAMING, iovm1_exec_state(&vm), "state");
+
+    r = iovm1_load_stream_complete(&vm);
+    VERIFY_EQ_INT(0, r, "iovm1_load_stream_complete() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_exec_state(&vm), "state");
+
+    // compare bytes:
+    for (int i = 0; i < 256; i++) {
+        int expected = prgm[i];
+        int got = vm.data[i];
+        if (expected != got) {
+            fprintf(
+                stdout,
+                "L" STRINGIZE(__LINE__) ": expected data[%d] of %d 0x%x; got %d 0x%x\n",
+                i, expected, expected, got, got
+            );
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 int test_iovm1_emit_size_0(void) {
     int r;
     struct iovm1_t vm;
@@ -978,6 +1026,7 @@ int test_read_sram_m_write_snescmd(void) {
 int run_test_suite(void) {
     int r;
 
+    run_test(test_load_streaming)
     run_test(test_iovm1_emit_size_0)
     run_test(test_iovm1_emit_size_1)
     run_test(test_iovm1_emit_size_512)
