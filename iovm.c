@@ -289,7 +289,6 @@ int iovm1_exec_step(struct iovm1_t *vm) {
         case IOVM1_STATE_READ_LOOP_END:
         case IOVM1_STATE_WRITE_LOOP_END:
         case IOVM1_STATE_WHILE_NEQ_LOOP_END:
-        case IOVM1_STATE_WHILE_EQ_LOOP_END:
             s = IOVM1_STATE_EXECUTE_NEXT;
             // purposely fall through to execute next instruction:
         case IOVM1_STATE_EXECUTE_NEXT:
@@ -313,11 +312,7 @@ int iovm1_exec_step(struct iovm1_t *vm) {
                 }
                 case IOVM1_OPCODE_WHILE_NEQ:
                     q = d[p++];
-                    if (IOVM1_INST_IMMED(x)) {
-                        s = IOVM1_STATE_WHILE_EQ_LOOP_ITER;
-                    } else {
-                        s = IOVM1_STATE_WHILE_NEQ_LOOP_ITER;
-                    }
+                    s = IOVM1_STATE_WHILE_NEQ_LOOP_ITER;
                     break;
                 case IOVM1_OPCODE_READ:
                 case IOVM1_OPCODE_WRITE:
@@ -338,6 +333,25 @@ int iovm1_exec_step(struct iovm1_t *vm) {
                 default:
                     // unknown opcode:
                     return -1;
+            }
+            break;
+        case IOVM1_STATE_WHILE_NEQ_LOOP_ITER:
+            // read from target and do not advance address:
+            vm->user_last_error = iovm1_target_read(
+                vm,
+                IOVM1_INST_TARGET(x),
+                0,
+                &m
+            );
+
+            if (IOVM1_INST_IMMED(x)) {
+                if (m != q) {
+                    s = IOVM1_STATE_WHILE_NEQ_LOOP_END;
+                }
+            } else {
+                if (m == q) {
+                    s = IOVM1_STATE_WHILE_NEQ_LOOP_END;
+                }
             }
             break;
         case IOVM1_STATE_READ_LOOP_ITER:
@@ -377,32 +391,6 @@ int iovm1_exec_step(struct iovm1_t *vm) {
                 s = IOVM1_STATE_WRITE_LOOP_END;
             }
             break;
-        case IOVM1_STATE_WHILE_NEQ_LOOP_ITER:
-            // read from target and do not advance address:
-            vm->user_last_error = iovm1_target_read(
-                vm,
-                IOVM1_INST_TARGET(x),
-                0,
-                &m
-            );
-
-            if (m == q) {
-                s = IOVM1_STATE_WHILE_NEQ_LOOP_END;
-            }
-            break;
-        case IOVM1_STATE_WHILE_EQ_LOOP_ITER:
-            // read from target and do not advance address:
-            vm->user_last_error = iovm1_target_read(
-                vm,
-                IOVM1_INST_TARGET(x),
-                0,
-                &m
-            );
-
-            if (m != q) {
-                s = IOVM1_STATE_WHILE_EQ_LOOP_END;
-            }
-            break;
         case IOVM1_STATE_ENDED:
             return 0;
         default:
@@ -414,9 +402,6 @@ int iovm1_exec_step(struct iovm1_t *vm) {
 int iovm1_exec_while_abort(struct iovm1_t *vm) {
     if (s == IOVM1_STATE_WHILE_NEQ_LOOP_ITER) {
         s = IOVM1_STATE_WHILE_NEQ_LOOP_END;
-        return 0;
-    } else if (s == IOVM1_STATE_WHILE_EQ_LOOP_ITER) {
-        s = IOVM1_STATE_WHILE_EQ_LOOP_END;
         return 0;
     } else {
         return -1;

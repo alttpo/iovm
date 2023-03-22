@@ -429,13 +429,13 @@ int test_while_eq(void) {
     // entered WHILE_NEQ state:
     r = iovm1_exec_step(&vm);
     VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_WHILE_EQ_LOOP_ITER, iovm1_exec_state(&vm), "state");
+    VERIFY_EQ_INT(IOVM1_STATE_WHILE_NEQ_LOOP_ITER, iovm1_exec_state(&vm), "state");
 
     // executing one WHILE_NEQ loop iteration:
     fake_target[target].expected_read = 0x55;
     r = iovm1_exec_step(&vm);
     VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_WHILE_EQ_LOOP_ITER, iovm1_exec_state(&vm), "state");
+    VERIFY_EQ_INT(IOVM1_STATE_WHILE_NEQ_LOOP_ITER, iovm1_exec_state(&vm), "state");
 
     // verify invocations:
     VERIFY_EQ_INT(0, fake_iovm1_target_set_address.count, "iovm1_target_set_address() invocations");
@@ -452,7 +452,7 @@ int test_while_eq(void) {
     fake_target[target].expected_read = 0xAA;
     r = iovm1_exec_step(&vm);
     VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_WHILE_EQ_LOOP_END, iovm1_exec_state(&vm), "state");
+    VERIFY_EQ_INT(IOVM1_STATE_WHILE_NEQ_LOOP_END, iovm1_exec_state(&vm), "state");
 
     // verify invocations:
     VERIFY_EQ_INT(0, fake_iovm1_target_set_address.count, "iovm1_target_set_address() invocations");
@@ -574,13 +574,13 @@ int test_while_eq_abort(void) {
     // entered WHILE_NEQ state:
     r = iovm1_exec_step(&vm);
     VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_WHILE_EQ_LOOP_ITER, iovm1_exec_state(&vm), "state");
+    VERIFY_EQ_INT(IOVM1_STATE_WHILE_NEQ_LOOP_ITER, iovm1_exec_state(&vm), "state");
 
     // executing one WHILE_NEQ loop iteration:
     fake_target[target].expected_read = 0x55;
     r = iovm1_exec_step(&vm);
     VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_WHILE_EQ_LOOP_ITER, iovm1_exec_state(&vm), "state");
+    VERIFY_EQ_INT(IOVM1_STATE_WHILE_NEQ_LOOP_ITER, iovm1_exec_state(&vm), "state");
 
     // verify invocations:
     VERIFY_EQ_INT(0, fake_iovm1_target_set_address.count, "iovm1_target_set_address() invocations");
@@ -596,7 +596,7 @@ int test_while_eq_abort(void) {
     // now abort:
     r = iovm1_exec_while_abort(&vm);
     VERIFY_EQ_INT(0, r, "iovm1_exec_while_abort() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_WHILE_EQ_LOOP_END, iovm1_exec_state(&vm), "state");
+    VERIFY_EQ_INT(IOVM1_STATE_WHILE_NEQ_LOOP_END, iovm1_exec_state(&vm), "state");
 
     // should end:
     r = iovm1_exec_step(&vm);
