@@ -271,8 +271,9 @@ enum iovm1_error_e iovm1_exec_step(struct iovm1_t *vm) {
             // must be VERIFIED before executing:
             return IOVM1_ERROR_VM_MUST_BE_VERIFIED;
         case IOVM1_STATE_VERIFIED:
+            // RESET must be an observable state between loading and executing the first instruction:
             s = IOVM1_STATE_RESET;
-            // purposely fall through to initialize registers:
+            break;
         case IOVM1_STATE_RESET:
             // initialize registers:
             x = 0;
