@@ -327,6 +327,54 @@ int test_end(void) {
     return 0;
 }
 
+int test_setaddr(void) {
+    int r;
+    struct iovm1_t vm;
+    uint8_t prgm[] = {
+        IOVM1_MKINST(IOVM1_OPCODE_SETADDR, 0, 0, 1, IOVM1_TARGET_SRAM),
+        0x10,
+        0x00,
+        0xF5,
+        IOVM1_INST_END
+    };
+
+    iovm1_init(&vm);
+
+    r = iovm1_load(&vm, prgm, sizeof(prgm));
+    VERIFY_EQ_INT(0, r, "iovm1_load() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_exec_state(&vm), "state");
+
+    r = iovm1_verify(&vm);
+    VERIFY_EQ_INT(0, r, "iovm1_verify() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_VERIFIED, iovm1_exec_state(&vm), "state");
+
+    // first execution initializes registers:
+    r = iovm1_exec_step(&vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_exec_state(&vm), "state");
+
+    // execute SETADDR:
+    r = iovm1_exec_step(&vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_exec_state(&vm), "state");
+
+    // verify invocations:
+    VERIFY_EQ_INT(1, fake_iovm1_target_set_address.count, "iovm1_target_set_address() invocations");
+    VERIFY_EQ_INT(IOVM1_TARGET_SRAM, fake_iovm1_target_set_address.target, "iovm1_target_set_address(target, _)");
+    VERIFY_EQ_INT(0xF50010, fake_iovm1_target_set_address.address, "iovm1_target_set_address(_, address)");
+
+    VERIFY_EQ_INT(0, fake_iovm1_target_read.count, "iovm1_target_read() invocations");
+    VERIFY_EQ_INT(0, fake_iovm1_target_write.count, "iovm1_target_write() invocations");
+    VERIFY_EQ_INT(0, fake_iovm1_emit.count, "iovm1_emit() invocations");
+
+    // should end:
+    r = iovm1_exec_step(&vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_ENDED, iovm1_exec_state(&vm), "state");
+
+    return 0;
+}
+
 int test_while_neq(void) {
     int r;
     struct iovm1_t vm;
@@ -1321,6 +1369,7 @@ int run_test_suite(void) {
     run_test(test_iovm1_emit_size_1)
     run_test(test_iovm1_emit_size_512)
     run_test(test_end)
+    run_test(test_setaddr)
     run_test(test_while_neq)
     run_test(test_while_eq)
     run_test(test_while_neq_abort)
