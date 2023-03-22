@@ -246,8 +246,11 @@ int iovm1_get_userdata(struct iovm1_t *vm, void **o_userdata) {
 #define m vm->m
 #define q vm->q
 
-int iovm1_reset(struct iovm1_t *vm) {
+int iovm1_exec_reset(struct iovm1_t *vm) {
     if (s < IOVM1_STATE_VERIFIED) {
+        return -1;
+    }
+    if (s != IOVM1_STATE_ENDED) {
         return -1;
     }
 
@@ -431,6 +434,18 @@ int iovm1_exec_step(struct iovm1_t *vm) {
             return -1;
     }
     return 0;
+}
+
+int iovm1_exec_while_abort(struct iovm1_t *vm) {
+    if (s == IOVM1_STATE_WHILE_NEQ_LOOP_ITER) {
+        s = IOVM1_STATE_WHILE_NEQ_LOOP_END;
+        return 0;
+    } else if (s == IOVM1_STATE_WHILE_EQ_LOOP_ITER) {
+        s = IOVM1_STATE_WHILE_EQ_LOOP_END;
+        return 0;
+    } else {
+        return -1;
+    }
 }
 
 #undef m

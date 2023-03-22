@@ -78,8 +78,9 @@ int iovm1_set_userdata(struct iovm1_t *vm, void *userdata);
 int iovm1_get_userdata(struct iovm1_t *vm, void **o_userdata);
 static inline enum iovm1_state_e iovm1_state(struct iovm1_t *vm) { return vm->s; }
 
-int iovm1_reset(struct iovm1_t *vm);
+int iovm1_exec_reset(struct iovm1_t *vm);
 int iovm1_exec_step(struct iovm1_t *vm);
+int iovm1_exec_while_abort(struct iovm1_t *vm);
 
 // external interface:
 
