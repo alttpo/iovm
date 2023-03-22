@@ -227,7 +227,7 @@ int test_iovm1_emit_size_0(void) {
     // first execution initializes registers:
     r = iovm1_emit_size(&vm, &emit_size);
     VERIFY_EQ_INT(0, r, "iovm1_emit_size() return value");
-    VERIFY_EQ_INT(0, emit_size, "emit_size");
+    VERIFY_EQ_INT(0, (int) emit_size, "emit_size");
 
     return 0;
 }
@@ -254,7 +254,7 @@ int test_iovm1_emit_size_1(void) {
     // first execution initializes registers:
     r = iovm1_emit_size(&vm, &emit_size);
     VERIFY_EQ_INT(0, r, "iovm1_emit_size() return value");
-    VERIFY_EQ_INT(1, emit_size, "emit_size");
+    VERIFY_EQ_INT(1, (int) emit_size, "emit_size");
 
     return 0;
 }
@@ -286,7 +286,7 @@ int test_iovm1_emit_size_512(void) {
     // first execution initializes registers:
     r = iovm1_emit_size(&vm, &emit_size);
     VERIFY_EQ_INT(0, r, "iovm1_emit_size() return value");
-    VERIFY_EQ_INT(512, emit_size, "emit_size");
+    VERIFY_EQ_INT(512, (int) emit_size, "emit_size");
 
     return 0;
 }
@@ -361,7 +361,7 @@ int test_setaddr(void) {
     // verify invocations:
     VERIFY_EQ_INT(1, fake_iovm1_target_set_address.count, "iovm1_target_set_address() invocations");
     VERIFY_EQ_INT(IOVM1_TARGET_SRAM, fake_iovm1_target_set_address.target, "iovm1_target_set_address(target, _)");
-    VERIFY_EQ_INT(0xF50010, fake_iovm1_target_set_address.address, "iovm1_target_set_address(_, address)");
+    VERIFY_EQ_INT(0xF50010, (int) fake_iovm1_target_set_address.address, "iovm1_target_set_address(_, address)");
 
     VERIFY_EQ_INT(0, fake_iovm1_target_read.count, "iovm1_target_read() invocations");
     VERIFY_EQ_INT(0, fake_iovm1_target_write.count, "iovm1_target_write() invocations");

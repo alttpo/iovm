@@ -45,7 +45,7 @@ enum iovm1_state_e {
     IOVM1_STATE_ENDED
 };
 
-enum iovm1_error_e : int {
+enum iovm1_error_e {
     IOVM1_SUCCESS,
     IOVM1_ERROR_ARG_OUT_OF_RANGE,
     IOVM1_ERROR_VM_MUST_BE_VERIFIED,

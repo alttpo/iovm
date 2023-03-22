@@ -113,7 +113,7 @@ void iovm1_init(struct iovm1_t *vm) {
     memset(d, 0, IOVM1_MAX_SIZE);
 }
 
-int iovm1_load(struct iovm1_t *vm, const uint8_t *data, unsigned len) {
+enum iovm1_error_e iovm1_load(struct iovm1_t *vm, const uint8_t *data, unsigned len) {
     if (s != IOVM1_STATE_INIT) {
         return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
@@ -131,7 +131,7 @@ int iovm1_load(struct iovm1_t *vm, const uint8_t *data, unsigned len) {
     return IOVM1_SUCCESS;
 }
 
-int iovm1_load_stream(struct iovm1_t *vm, const uint8_t *data, unsigned len) {
+enum iovm1_error_e iovm1_load_stream(struct iovm1_t *vm, const uint8_t *data, unsigned len) {
     if (s > IOVM1_STATE_LOAD_STREAMING) {
         return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
@@ -151,7 +151,7 @@ int iovm1_load_stream(struct iovm1_t *vm, const uint8_t *data, unsigned len) {
     return IOVM1_SUCCESS;
 }
 
-int iovm1_load_stream_complete(struct iovm1_t *vm) {
+enum iovm1_error_e iovm1_load_stream_complete(struct iovm1_t *vm) {
     if (s != IOVM1_STATE_LOAD_STREAMING) {
         return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
@@ -161,7 +161,7 @@ int iovm1_load_stream_complete(struct iovm1_t *vm) {
     return IOVM1_SUCCESS;
 }
 
-int iovm1_verify(struct iovm1_t *vm) {
+enum iovm1_error_e iovm1_verify(struct iovm1_t *vm) {
     if (s != IOVM1_STATE_LOADED) {
         return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
@@ -220,7 +220,7 @@ int iovm1_verify(struct iovm1_t *vm) {
     return IOVM1_SUCCESS;
 }
 
-int iovm1_emit_size(struct iovm1_t *vm, uint32_t *o_size) {
+enum iovm1_error_e iovm1_emit_size(struct iovm1_t *vm, uint32_t *o_size) {
     if (s < IOVM1_STATE_VERIFIED) {
         return IOVM1_ERROR_VM_MUST_BE_VERIFIED;
     }
@@ -230,12 +230,12 @@ int iovm1_emit_size(struct iovm1_t *vm, uint32_t *o_size) {
     return IOVM1_SUCCESS;
 }
 
-int iovm1_set_userdata(struct iovm1_t *vm, void *userdata) {
+enum iovm1_error_e iovm1_set_userdata(struct iovm1_t *vm, void *userdata) {
     vm->userdata = userdata;
     return IOVM1_SUCCESS;
 }
 
-int iovm1_get_userdata(struct iovm1_t *vm, void **o_userdata) {
+enum iovm1_error_e iovm1_get_userdata(struct iovm1_t *vm, void **o_userdata) {
     *o_userdata = vm->userdata;
     return IOVM1_SUCCESS;
 }
@@ -246,7 +246,7 @@ int iovm1_get_userdata(struct iovm1_t *vm, void **o_userdata) {
 #define m vm->m
 #define q vm->q
 
-int iovm1_exec_reset(struct iovm1_t *vm) {
+enum iovm1_error_e iovm1_exec_reset(struct iovm1_t *vm) {
     if (s < IOVM1_STATE_VERIFIED) {
         return IOVM1_ERROR_VM_MUST_BE_VERIFIED;
     }
@@ -258,7 +258,7 @@ int iovm1_exec_reset(struct iovm1_t *vm) {
     return IOVM1_SUCCESS;
 }
 
-int iovm1_exec_step(struct iovm1_t *vm) {
+enum iovm1_error_e iovm1_exec_step(struct iovm1_t *vm) {
     enum iovm1_opcode_e o;
 
     if (s < IOVM1_STATE_VERIFIED) {
@@ -399,7 +399,7 @@ int iovm1_exec_step(struct iovm1_t *vm) {
     return IOVM1_SUCCESS;
 }
 
-int iovm1_exec_while_abort(struct iovm1_t *vm) {
+enum iovm1_error_e iovm1_exec_while_abort(struct iovm1_t *vm) {
     if (s < IOVM1_STATE_VERIFIED) {
         return IOVM1_ERROR_VM_MUST_BE_VERIFIED;
     }
