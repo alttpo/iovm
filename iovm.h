@@ -66,7 +66,7 @@ struct iovm1_t {
 // core functions:
 
 void iovm1_init(struct iovm1_t *vm);
-int iovm1_load(struct iovm1_t *vm, unsigned len, const uint8_t *data);
+int iovm1_load(struct iovm1_t *vm, const uint8_t *data, unsigned len);
 int iovm1_verify(struct iovm1_t *vm);
 
 int iovm1_emit_size(struct iovm1_t *vm, uint32_t *size);

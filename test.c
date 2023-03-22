@@ -168,7 +168,7 @@ int test_iovm1_emit_size_0(void) {
 
     iovm1_init(&vm);
 
-    r = iovm1_load(&vm, sizeof(prgm), prgm);
+    r = iovm1_load(&vm, prgm, sizeof(prgm));
     VERIFY_EQ_INT(0, r, "iovm1_load() return value");
     VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_state(&vm), "state");
 
@@ -195,7 +195,7 @@ int test_iovm1_emit_size_1(void) {
 
     iovm1_init(&vm);
 
-    r = iovm1_load(&vm, sizeof(prgm), prgm);
+    r = iovm1_load(&vm, prgm, sizeof(prgm));
     VERIFY_EQ_INT(0, r, "iovm1_load() return value");
     VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_state(&vm), "state");
 
@@ -227,7 +227,7 @@ int test_iovm1_emit_size_512(void) {
 
     iovm1_init(&vm);
 
-    r = iovm1_load(&vm, sizeof(prgm), prgm);
+    r = iovm1_load(&vm, prgm, sizeof(prgm));
     VERIFY_EQ_INT(0, r, "iovm1_load() return value");
     VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_state(&vm), "state");
 
@@ -252,7 +252,7 @@ int test_end(void) {
 
     iovm1_init(&vm);
 
-    r = iovm1_load(&vm, sizeof(prgm), prgm);
+    r = iovm1_load(&vm, prgm, sizeof(prgm));
     VERIFY_EQ_INT(0, r, "iovm1_load() return value");
     VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_state(&vm), "state");
 
@@ -290,7 +290,7 @@ int test_read_non_repeat_immed(void) {
 
     iovm1_init(&vm);
 
-    r = iovm1_load(&vm, sizeof(prgm), prgm);
+    r = iovm1_load(&vm, prgm, sizeof(prgm));
     VERIFY_EQ_INT(0, r, "iovm1_load() return value");
     VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_state(&vm), "state");
 
@@ -344,7 +344,7 @@ int test_read_repeat_immed(void) {
 
     iovm1_init(&vm);
 
-    r = iovm1_load(&vm, sizeof(prgm), prgm);
+    r = iovm1_load(&vm, prgm, sizeof(prgm));
     VERIFY_EQ_INT(0, r, "iovm1_load() return value");
     VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_state(&vm), "state");
 
@@ -412,7 +412,7 @@ int test_read_repeat_256_immed(void) {
 
     iovm1_init(&vm);
 
-    r = iovm1_load(&vm, sizeof(prgm), prgm);
+    r = iovm1_load(&vm, prgm, sizeof(prgm));
     VERIFY_EQ_INT(0, r, "iovm1_load() return value");
     VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_state(&vm), "state");
 
@@ -467,7 +467,7 @@ int test_read_non_repeat_non_immed_sram(void) {
 
     iovm1_init(&vm);
 
-    r = iovm1_load(&vm, sizeof(prgm), prgm);
+    r = iovm1_load(&vm, prgm, sizeof(prgm));
     VERIFY_EQ_INT(0, r, "iovm1_load() return value");
     VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_state(&vm), "state");
 
@@ -526,7 +526,7 @@ int test_read_repeat_non_immed_sram(void) {
 
     iovm1_init(&vm);
 
-    r = iovm1_load(&vm, sizeof(prgm), prgm);
+    r = iovm1_load(&vm, prgm, sizeof(prgm));
     VERIFY_EQ_INT(0, r, "iovm1_load() return value");
     VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_state(&vm), "state");
 
@@ -605,7 +605,7 @@ int test_read_non_repeat_non_immed_snescmd(void) {
 
     iovm1_init(&vm);
 
-    r = iovm1_load(&vm, sizeof(prgm), prgm);
+    r = iovm1_load(&vm, prgm, sizeof(prgm));
     VERIFY_EQ_INT(0, r, "iovm1_load() return value");
     VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_state(&vm), "state");
 
@@ -664,7 +664,7 @@ int test_read_repeat_non_immed_snescmd(void) {
 
     iovm1_init(&vm);
 
-    r = iovm1_load(&vm, sizeof(prgm), prgm);
+    r = iovm1_load(&vm, prgm, sizeof(prgm));
     VERIFY_EQ_INT(0, r, "iovm1_load() return value");
     VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_state(&vm), "state");
 
@@ -744,7 +744,7 @@ int test_write_non_repeat_immed_sram(void) {
 
     iovm1_init(&vm);
 
-    r = iovm1_load(&vm, sizeof(prgm), prgm);
+    r = iovm1_load(&vm, prgm, sizeof(prgm));
     VERIFY_EQ_INT(0, r, "iovm1_load() return value");
     VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_state(&vm), "state");
 
@@ -803,7 +803,7 @@ int test_write_non_repeat_immed_snescmd(void) {
 
     iovm1_init(&vm);
 
-    r = iovm1_load(&vm, sizeof(prgm), prgm);
+    r = iovm1_load(&vm, prgm, sizeof(prgm));
     VERIFY_EQ_INT(0, r, "iovm1_load() return value");
     VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_state(&vm), "state");
 
@@ -872,7 +872,7 @@ int test_read_sram_m_write_snescmd(void) {
 
     iovm1_init(&vm);
 
-    r = iovm1_load(&vm, sizeof(prgm), prgm);
+    r = iovm1_load(&vm, prgm, sizeof(prgm));
     VERIFY_EQ_INT(0, r, "iovm1_load() return value");
     VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_state(&vm), "state");
 

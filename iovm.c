@@ -112,7 +112,7 @@ void iovm1_init(struct iovm1_t *vm) {
     memset(d, 0, IOVM1_MAX_SIZE);
 }
 
-int iovm1_load(struct iovm1_t *vm, unsigned len, const uint8_t *data) {
+int iovm1_load(struct iovm1_t *vm, const uint8_t *data, unsigned len) {
     if (s != IOVM1_STATE_INIT) {
         return -1;
     }
