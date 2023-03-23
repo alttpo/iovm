@@ -1,6 +1,80 @@
 #ifndef SD2SNES_IOVM_H
 #define SD2SNES_IOVM_H
 
+
+/*
+executes a VM procedure to accomplish custom tasks which require low-latency access to FPGA.
+
+instructions:
+
+   76 54 3210
+  [-- tt oooo]
+
+    o = opcode
+    t = target
+    - = reserved
+
+memory:
+    M[64...]:   linear memory of procedure, at least 64 bytes
+    A[4]:       24-bit address for each target, indexed by `t`
+
+ registers:
+    P:          points to current byte in M
+    Q:          comparison byte
+    C:          loop counter
+
+opcodes (o):
+  0=END:        ends procedure
+
+  1=SETOFFS:    sets target address 16-bit offset within bank
+                    set lo = M[P++]
+                    set hi = M[P++] << 8
+                    set A[t] = (A[t] & 0xFF0000) | hi | lo
+
+  2=SETBANK:    sets target address 8-bit bank
+                    // replace bank byte:
+                    set bk = M[P++] << 16
+                    set A[t] = bk | (A[t] & 0x00FFFF)
+
+  3=READ:       reads bytes from target
+                    set C to M[P++] (translate 0 -> 256, else use 1..255)
+
+                    // invoke user-supplied callback function:
+                    cb_read(t, &A[t], C);
+                    // expected behavior:
+                    //for n=0; n<C; n++ {
+                    //    read(t, A[t]++)
+                    //}
+
+  4=WRITE:      writes bytes to target
+                    set C to M[P++] (translate 0 -> 256, else use 1..255)
+
+                    // invoke user-supplied callback function:
+                    cb_write(t, &A[t], C, &M[P]);
+                    // expected behavior:
+                    //for n=0; n<C; n++ {
+                    //    write(t, A[t]++, M[P++])
+                    //}
+
+  5=WHILE_NEQ:  waits while read(t) != M[P]
+                    set Q to M[P++]
+
+                    // invoke user-supplied callback function:
+                    cb_while_neq(t, A[t], Q);
+                    // expected behavior:
+                    //while (read(t, A[t]) != Q) {}
+
+  6=WHILE_EQ:   waits while read_non_advancing(t) == M[P]
+                    set Q to M[P++]
+
+                    // invoke user-supplied callback function:
+                    cb_while_eq(t, A[t], Q);
+                    // expected behavior:
+                    //while (read(t, A[t]) == Q) {}
+
+  7..15:        reserved
+*/
+
 // IOVM1_MAX_SIZE can be overridden
 #ifndef IOVM1_MAX_SIZE
 #  define IOVM1_MAX_SIZE 512
