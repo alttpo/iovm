@@ -21,8 +21,6 @@ memory:
 
  registers:
     P:          points to current byte in M
-    Q:          comparison byte
-    C:          loop counter
 
 opcodes (o):
   0=END:        ends procedure
@@ -76,15 +74,10 @@ opcodes (o):
   7..15:        reserved
 */
 
-// IOVM1_MAX_SIZE can be overridden
-#ifndef IOVM1_MAX_SIZE
-#  define IOVM1_MAX_SIZE 512
-#elif IOVM1_MAX_SIZE < 32
-#  error("IOVM1_MAX_SIZE must be at least 32 bytes")
-#endif
-
 #define IOVM1_INST_OPCODE(x)    ((x)&15)
 #define IOVM1_INST_TARGET(x)    (((x)>>4)&3)
+
+#define IOVM1_INST_END (0)
 
 #define IOVM1_MKINST(o, t) ( \
      ((uint8_t)(o)&15) | \
@@ -101,6 +94,8 @@ enum iovm1_opcode {
 };
 
 typedef unsigned iovm1_target;
+
+#define IOVM1_TARGET_COUNT  (4)
 
 enum iovm1_state {
     IOVM1_STATE_INIT,
@@ -125,43 +120,60 @@ struct iovm1_t;
 
 // callback typedefs:
 
-typedef int (*iovm1_read_f)(struct iovm1_t *vm, iovm1_target target, uint32_t *r_address, unsigned len);
-typedef int (*iovm1_write_f)(struct iovm1_t *vm, iovm1_target target, uint32_t *r_address, uint8_t *i_data, unsigned len);
-typedef int (*iovm1_while_neq_f)(struct iovm1_t *vm, iovm1_target target, uint32_t address, uint8_t comparison);
-typedef int (*iovm1_while_eq_f)(struct iovm1_t *vm, iovm1_target target, uint32_t address, uint8_t comparison);
+typedef void (*iovm1_read_f)(struct iovm1_t *vm, iovm1_target target, uint32_t *r_address, unsigned len);
+typedef void (*iovm1_write_f)(struct iovm1_t *vm, iovm1_target target, uint32_t *r_address, const uint8_t *i_data, unsigned len);
+typedef void (*iovm1_while_neq_f)(struct iovm1_t *vm, iovm1_target target, uint32_t address, uint8_t comparison);
+typedef void (*iovm1_while_eq_f)(struct iovm1_t *vm, iovm1_target target, uint32_t address, uint8_t comparison);
+
+// iovm1_t definition:
+
+struct iovm1_t {
+    enum iovm1_state    s;      // current state
+
+    uint8_t             x;      // current instruction byte
+    unsigned            p;      // pointer into m[]
+    uint32_t            a[4];   // target addresses
+
+    const void *const  *userdata;
+
+    iovm1_read_f        read_cb;
+    iovm1_write_f       write_cb;
+    iovm1_while_neq_f   while_neq_cb;
+    iovm1_while_eq_f    while_eq_cb;
+
+    uint32_t            total_read;     // total number of bytes to read
+    uint32_t            total_write;    // total number of bytes to write
+
+    // length of linear memory
+    unsigned            len;
+    // linear memory containing procedure instructions and immediate data
+    const uint8_t *     m;
+};
 
 // core functions:
 
 void iovm1_init(struct iovm1_t *vm);
 
-enum iovm1_error iovm1_set_cb_read(struct iovm1_t *vm, iovm1_read_f cb);
+enum iovm1_error iovm1_set_read_cb(struct iovm1_t *vm, iovm1_read_f cb);
+enum iovm1_error iovm1_set_write_cb(struct iovm1_t *vm, iovm1_write_f cb);
+enum iovm1_error iovm1_set_while_neq_cb(struct iovm1_t *vm, iovm1_while_neq_f cb);
+enum iovm1_error iovm1_set_while_eq_cb(struct iovm1_t *vm, iovm1_while_eq_f cb);
 
-enum iovm1_error iovm1_set_cb_write(struct iovm1_t *vm, iovm1_write_f cb);
+enum iovm1_error iovm1_set_userdata(struct iovm1_t *vm, const void *userdata);
+enum iovm1_error iovm1_get_userdata(struct iovm1_t *vm, const void **o_userdata);
 
-enum iovm1_error iovm1_set_cb_while_neq(struct iovm1_t *vm, iovm1_while_neq_f cb);
-
-enum iovm1_error iovm1_set_cb_while_eq(struct iovm1_t *vm, iovm1_while_eq_f cb);
-
-enum iovm1_error iovm1_load(struct iovm1_t *vm, const uint8_t *data, unsigned len);
-
-enum iovm1_error iovm1_load_stream(struct iovm1_t *vm, const uint8_t *data, unsigned len);
-
-enum iovm1_error iovm1_load_stream_complete(struct iovm1_t *vm);
+enum iovm1_error iovm1_load(struct iovm1_t *vm, const uint8_t *proc, unsigned len);
 
 enum iovm1_error iovm1_verify(struct iovm1_t *vm);
 
-enum iovm1_error iovm1_set_userdata(struct iovm1_t *vm, void *userdata);
+enum iovm1_error iovm1_get_total_read(struct iovm1_t *vm, uint32_t *o_bytes_read);
+enum iovm1_error iovm1_get_total_write(struct iovm1_t *vm, uint32_t *o_bytes_write);
 
-enum iovm1_error iovm1_get_userdata(struct iovm1_t *vm, void **o_userdata);
-
-enum iovm1_error iovm1_total_read(struct iovm1_t *vm, uint32_t *o_bytes_read);
-
-enum iovm1_error iovm1_total_write(struct iovm1_t *vm, uint32_t *o_bytes_write);
+enum iovm1_error iovm1_get_target_address(struct iovm1_t *vm, iovm1_target target, uint32_t *o_address);
 
 enum iovm1_error iovm1_exec_reset(struct iovm1_t *vm);
-
 enum iovm1_error iovm1_exec_step(struct iovm1_t *vm);
 
-enum iovm1_state iovm1_exec_state(struct iovm1_t *vm);
+enum iovm1_state iovm1_get_exec_state(struct iovm1_t *vm);
 
 #endif //IOVM_H
