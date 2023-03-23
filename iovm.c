@@ -120,7 +120,7 @@ enum iovm1_error_e iovm1_load(struct iovm1_t *vm, const uint8_t *data, unsigned 
 
     // bounds checking:
     if (len > IOVM1_MAX_SIZE) {
-        return IOVM1_ERROR_ARG_OUT_OF_RANGE;
+        return IOVM1_ERROR_OUT_OF_RANGE;
     }
 
     // copy in program data:
@@ -138,7 +138,7 @@ enum iovm1_error_e iovm1_load_stream(struct iovm1_t *vm, const uint8_t *data, un
 
     // bounds checking:
     if (vm->stream_offs + len > IOVM1_MAX_SIZE) {
-        return IOVM1_ERROR_ARG_OUT_OF_RANGE;
+        return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
 
     // copy in program data:
@@ -222,7 +222,7 @@ enum iovm1_error_e iovm1_verify(struct iovm1_t *vm) {
 
 enum iovm1_error_e iovm1_emit_size(struct iovm1_t *vm, uint32_t *o_size) {
     if (s < IOVM1_STATE_VERIFIED) {
-        return IOVM1_ERROR_VM_MUST_BE_VERIFIED;
+        return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
 
     *o_size = vm->emit_size;
@@ -248,9 +248,9 @@ enum iovm1_error_e iovm1_get_userdata(struct iovm1_t *vm, void **o_userdata) {
 
 enum iovm1_error_e iovm1_exec_reset(struct iovm1_t *vm) {
     if (s < IOVM1_STATE_VERIFIED) {
-        return IOVM1_ERROR_VM_MUST_BE_VERIFIED;
+        return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
-    if (s != IOVM1_STATE_ENDED) {
+    if (s >= IOVM1_STATE_EXECUTE_NEXT && s < IOVM1_STATE_ENDED) {
         return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
 
@@ -262,14 +262,14 @@ enum iovm1_error_e iovm1_exec_step(struct iovm1_t *vm) {
     enum iovm1_opcode_e o;
 
     if (s < IOVM1_STATE_VERIFIED) {
-        return IOVM1_ERROR_VM_MUST_BE_VERIFIED;
+        return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
 
     switch (s) {
         case IOVM1_STATE_INIT:
         case IOVM1_STATE_LOADED:
             // must be VERIFIED before executing:
-            return IOVM1_ERROR_VM_MUST_BE_VERIFIED;
+            return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
         case IOVM1_STATE_VERIFIED:
             // RESET must be an observable state between loading and executing the first instruction:
             s = IOVM1_STATE_RESET;
@@ -298,6 +298,7 @@ enum iovm1_error_e iovm1_exec_step(struct iovm1_t *vm) {
                 s = IOVM1_STATE_ENDED;
                 return IOVM1_SUCCESS;
             }
+
             o = IOVM1_INST_OPCODE(x);
             switch (o) {
                 case IOVM1_OPCODE_SETADDR: {
@@ -395,14 +396,14 @@ enum iovm1_error_e iovm1_exec_step(struct iovm1_t *vm) {
         case IOVM1_STATE_ENDED:
             return IOVM1_SUCCESS;
         default:
-            return IOVM1_ERROR_VM_UNKNOWN_STATE;
+            return IOVM1_ERROR_OUT_OF_RANGE;
     }
     return IOVM1_SUCCESS;
 }
 
 enum iovm1_error_e iovm1_exec_while_abort(struct iovm1_t *vm) {
     if (s < IOVM1_STATE_VERIFIED) {
-        return IOVM1_ERROR_VM_MUST_BE_VERIFIED;
+        return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
 
     if (s == IOVM1_STATE_WHILE_NEQ_LOOP_ITER) {
