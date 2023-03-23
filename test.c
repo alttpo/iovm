@@ -22,14 +22,14 @@ int tests_failed = 0;
 struct {
     int count;
     struct iovm1_t *vm;
-    enum iovm1_target_e target;
+    iovm1_target target;
     uint32_t address;
 } fake_iovm1_target_set_address;
 
 struct {
     int count;
     struct iovm1_t *vm;
-    enum iovm1_target_e target;
+    iovm1_target target;
     int advance;
     uint8_t *o_data;
 } fake_iovm1_target_read;
@@ -37,7 +37,7 @@ struct {
 struct {
     int count;
     struct iovm1_t *vm;
-    enum iovm1_target_e target;
+    iovm1_target target;
     int advance;
     uint8_t data;
 } fake_iovm1_target_write;
@@ -89,7 +89,7 @@ void fake_reset(void) {
     }
 }
 
-int iovm1_target_set_address(struct iovm1_t *vm, enum iovm1_target_e target, uint32_t address) {
+int iovm1_target_set_address(struct iovm1_t *vm, iovm1_target target, uint32_t address) {
     fake_iovm1_target_set_address.count++;
     fake_iovm1_target_set_address.vm = vm;
     fake_iovm1_target_set_address.target = target;
@@ -104,7 +104,7 @@ int iovm1_target_set_address(struct iovm1_t *vm, enum iovm1_target_e target, uin
     return 0;
 }
 
-int iovm1_target_read(struct iovm1_t *vm, enum iovm1_target_e target, int advance, uint8_t *o_data) {
+int iovm1_target_read(struct iovm1_t *vm, iovm1_target target, int advance, uint8_t *o_data) {
     fake_iovm1_target_read.count++;
     fake_iovm1_target_read.vm = vm;
     fake_iovm1_target_read.target = target;
@@ -125,7 +125,7 @@ int iovm1_target_read(struct iovm1_t *vm, enum iovm1_target_e target, int advanc
     return 0;
 }
 
-int iovm1_target_write(struct iovm1_t *vm, enum iovm1_target_e target, int advance, uint8_t data) {
+int iovm1_target_write(struct iovm1_t *vm, iovm1_target target, int advance, uint8_t data) {
     fake_iovm1_target_write.count++;
     fake_iovm1_target_write.vm = vm;
     fake_iovm1_target_write.target = target;

@@ -1,96 +1,30 @@
 /*
-   iovm.c: I/O virtual machine to interact with FPGA-SPI
+   iovm.c: trivial I/O virtual machine execution engine
 */
-
-/*
-executes a VM procedure to accomplish custom tasks which require low-latency access to FPGA.
-
-instructions:
-
-   x x x x x xxx
-  [t i r v - ooo] {data[...]}
-
-    o = opcode (0..7)
-    v = advance target address after read/write
-    r = repeat mode
-    i = immediate data mode (or invert mode)
-    t = target (0 = SRAM, 1 = SNESCMD)
-    - = reserved
-    x = all 8 instruction bits
-
-memory:
-    data[]:     linear memory of procedure, at least 64 bytes
-    A[2]:       address for each target, indexed by `t`
-
- registers:
-    P:          points to current byte in `data`
-    M:          data byte
-    Q:          comparison byte
-    C:          loop counter
-
-opcodes (o):
-  0=SETADDR:    sets target address (24-bit)
-                    // all instruction bits == 0 ENDS the procedure:
-                    if x==0 {
-                        END
-                    }
-                    set lo = data[P++]
-                    set hi = data[P++]
-                    set bk = data[P++]
-                    set A[t] = lo | (hi<<8) | (bk<<16)
-
-  1=WHILE_NEQ:  waits while read(t) != data[P]
-                    set Q to data[P++]
-                    // i flag inverts check from `!=` to `==`
-                    if i==1 {
-                        while ((M = read(t)) == Q) ;
-                    } else {
-                        while ((M = read(t)) != Q) ;
-                    }
-
-  2=READ:       reads bytes and emits into USB response packet
-                    if r==1 {
-                        set C to data[P++] (translate 0 -> 256, else use 1..255)
-                    } else {
-                        set C to 1
-                    }
-
-                    for n=0; n<C; n++ {
-                        if i==1 {
-                            set M to data[P++]
-                        } else {
-                            set M to read(t)
-                            if v==1 { set A[t] += 1 }
-                        }
-
-                        append M byte to USB response packet
-                    }
-
-  3=WRITE:      writes bytes to target
-                    if r==1 {
-                        set C to data[P++] (translate 0 -> 256, else use 1..255)
-                    } else {
-                        set C to 1
-                    }
-
-                    for n=0; n<C; n++ {
-                        if i==1 {
-                            set M to data[P++]
-                        }
-
-                        write(t, M)
-                        if t==SNESCMD { set A[t] += 1 }   # SNESCMD writes always advance address
-                          elseif v==1 { set A[t] += 1 }
-                    }
-
-  4..7:         reserved
-
- */
 
 #include <string.h>
 #include <stdint.h>
 
 #include "iovm.h"
+
+struct iovm1_t {
+    enum iovm1_state  s;  // current state
+
+    uint8_t     x;  // current instruction byte
+
+    int         p;  // pointer into data[]
+    int         c;  // counter
+    uint8_t     m;  // M register
+    uint8_t     q;  // comparison byte for WHILE_NEQ
+
+    void        *userdata;
+    int         user_last_error;
+
+    uint32_t    emit_size;
+
+    unsigned    stream_offs;
+    uint8_t     data[IOVM1_MAX_SIZE];
+};
 
 #define d vm->data
 #define s vm->s
@@ -113,7 +47,7 @@ void iovm1_init(struct iovm1_t *vm) {
     memset(d, 0, IOVM1_MAX_SIZE);
 }
 
-enum iovm1_error_e iovm1_load(struct iovm1_t *vm, const uint8_t *data, unsigned len) {
+enum iovm1_error iovm1_load(struct iovm1_t *vm, const uint8_t *data, unsigned len) {
     if (s != IOVM1_STATE_INIT) {
         return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
@@ -131,7 +65,7 @@ enum iovm1_error_e iovm1_load(struct iovm1_t *vm, const uint8_t *data, unsigned 
     return IOVM1_SUCCESS;
 }
 
-enum iovm1_error_e iovm1_load_stream(struct iovm1_t *vm, const uint8_t *data, unsigned len) {
+enum iovm1_error iovm1_load_stream(struct iovm1_t *vm, const uint8_t *data, unsigned len) {
     if (s > IOVM1_STATE_LOAD_STREAMING) {
         return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
@@ -151,7 +85,7 @@ enum iovm1_error_e iovm1_load_stream(struct iovm1_t *vm, const uint8_t *data, un
     return IOVM1_SUCCESS;
 }
 
-enum iovm1_error_e iovm1_load_stream_complete(struct iovm1_t *vm) {
+enum iovm1_error iovm1_load_stream_complete(struct iovm1_t *vm) {
     if (s != IOVM1_STATE_LOAD_STREAMING) {
         return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
@@ -161,7 +95,7 @@ enum iovm1_error_e iovm1_load_stream_complete(struct iovm1_t *vm) {
     return IOVM1_SUCCESS;
 }
 
-enum iovm1_error_e iovm1_verify(struct iovm1_t *vm) {
+enum iovm1_error iovm1_verify(struct iovm1_t *vm) {
     if (s != IOVM1_STATE_LOADED) {
         return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
@@ -174,7 +108,7 @@ enum iovm1_error_e iovm1_verify(struct iovm1_t *vm) {
             break;
         }
 
-        enum iovm1_opcode_e o = IOVM1_INST_OPCODE(x);
+        enum iovm1_opcode o = IOVM1_INST_OPCODE(x);
         switch (o) {
             case IOVM1_OPCODE_SETADDR:
                 p += 3;
@@ -220,7 +154,7 @@ enum iovm1_error_e iovm1_verify(struct iovm1_t *vm) {
     return IOVM1_SUCCESS;
 }
 
-enum iovm1_error_e iovm1_emit_size(struct iovm1_t *vm, uint32_t *o_size) {
+enum iovm1_error iovm1_emit_size(struct iovm1_t *vm, uint32_t *o_size) {
     if (s < IOVM1_STATE_VERIFIED) {
         return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
@@ -230,12 +164,12 @@ enum iovm1_error_e iovm1_emit_size(struct iovm1_t *vm, uint32_t *o_size) {
     return IOVM1_SUCCESS;
 }
 
-enum iovm1_error_e iovm1_set_userdata(struct iovm1_t *vm, void *userdata) {
+enum iovm1_error iovm1_set_userdata(struct iovm1_t *vm, void *userdata) {
     vm->userdata = userdata;
     return IOVM1_SUCCESS;
 }
 
-enum iovm1_error_e iovm1_get_userdata(struct iovm1_t *vm, void **o_userdata) {
+enum iovm1_error iovm1_get_userdata(struct iovm1_t *vm, void **o_userdata) {
     *o_userdata = vm->userdata;
     return IOVM1_SUCCESS;
 }
@@ -246,7 +180,7 @@ enum iovm1_error_e iovm1_get_userdata(struct iovm1_t *vm, void **o_userdata) {
 #define m vm->m
 #define q vm->q
 
-enum iovm1_error_e iovm1_exec_reset(struct iovm1_t *vm) {
+enum iovm1_error iovm1_exec_reset(struct iovm1_t *vm) {
     if (s < IOVM1_STATE_VERIFIED) {
         return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
@@ -258,8 +192,8 @@ enum iovm1_error_e iovm1_exec_reset(struct iovm1_t *vm) {
     return IOVM1_SUCCESS;
 }
 
-enum iovm1_error_e iovm1_exec_step(struct iovm1_t *vm) {
-    enum iovm1_opcode_e o;
+enum iovm1_error iovm1_exec_step(struct iovm1_t *vm) {
+    enum iovm1_opcode o;
 
     if (s < IOVM1_STATE_VERIFIED) {
         return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
@@ -287,8 +221,6 @@ enum iovm1_error_e iovm1_exec_step(struct iovm1_t *vm) {
 
             s = IOVM1_STATE_EXECUTE_NEXT;
             break;
-        case IOVM1_STATE_READ_LOOP_END:
-        case IOVM1_STATE_WRITE_LOOP_END:
         case IOVM1_STATE_WHILE_NEQ_LOOP_END:
             s = IOVM1_STATE_EXECUTE_NEXT;
             // purposely fall through to execute next instruction:
@@ -327,7 +259,13 @@ enum iovm1_error_e iovm1_exec_step(struct iovm1_t *vm) {
                     //assert(c > 0);
 
                     if (o == IOVM1_OPCODE_READ) {
-                        s = IOVM1_STATE_READ_LOOP_ITER;
+                        vm->user_last_error = iovm1_user_read(
+                            vm,
+                            IOVM1_INST_TARGET(x),
+                            IOVM1_INST_ADVANCE(x),
+                            c,
+                            m
+                        );
                     } else {
                         s = IOVM1_STATE_WRITE_LOOP_ITER;
                     }
@@ -401,7 +339,7 @@ enum iovm1_error_e iovm1_exec_step(struct iovm1_t *vm) {
     return IOVM1_SUCCESS;
 }
 
-enum iovm1_error_e iovm1_exec_while_abort(struct iovm1_t *vm) {
+enum iovm1_error iovm1_exec_while_abort(struct iovm1_t *vm) {
     if (s < IOVM1_STATE_VERIFIED) {
         return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
@@ -412,6 +350,10 @@ enum iovm1_error_e iovm1_exec_while_abort(struct iovm1_t *vm) {
     } else {
         return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
+}
+
+enum iovm1_state iovm1_exec_state(struct iovm1_t *vm) {
+    return s;
 }
 
 #undef m
