@@ -174,6 +174,8 @@ enum iovm1_error iovm1_get_target_address(struct iovm1_t *vm, iovm1_target targe
 enum iovm1_error iovm1_exec_reset(struct iovm1_t *vm);
 enum iovm1_error iovm1_exec_step(struct iovm1_t *vm);
 
-enum iovm1_state iovm1_get_exec_state(struct iovm1_t *vm);
+static inline enum iovm1_state iovm1_get_exec_state(struct iovm1_t *vm) {
+    return vm->s;
+}
 
 #endif //IOVM_H

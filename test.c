@@ -7,46 +7,11 @@
 int tests_passed = 0;
 int tests_failed = 0;
 
-#define STRINGIZE_DETAIL(x) #x
-#define STRINGIZE(x) STRINGIZE_DETAIL(x)
-
 #define VERIFY_EQ_INT(expected, got, name) \
     do if ((expected) != (got)) { \
         fprintf(stdout, "L%d: expected %s of %d 0x%x; got %d 0x%x\n", __LINE__, name, expected, expected, got, got); \
         return 1; \
     } while (0)
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunused-function"
-static int verify_eq_bytes(
-    const uint8_t *expectedArr,
-    const uint8_t *gotArr,
-    unsigned len,
-    unsigned line,
-    const char *name
-) {
-    for (unsigned i = 0; i < len; i++) {
-        int expected = expectedArr[i];
-        int got = gotArr[i];
-
-        if (expected != got) {
-            fprintf(
-                stdout,
-                "L%d: expected %s[%d] of %d 0x%x; got %d 0x%x\n",
-                line,
-                name,
-                i,
-                expected, expected,
-                got, got
-            );
-            return 1;
-        }
-    }
-    return 0;
-}
-#pragma clang diagnostic pop
-
-#define VERIFY_EQ_BYTES(expected, got, len, name) verify_eq_bytes(expected, got, len, __LINE__, name)
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 // FAKE callback implementation:
@@ -105,6 +70,18 @@ void fake_reset(void) {
     fake_write.r_address  = 0;
     fake_write.i_data  = 0;
     fake_write.len  = 0;
+
+    fake_while_eq.count = 0;
+    fake_while_eq.vm = 0;
+    fake_while_eq.target = 0;
+    fake_while_eq.address = 0;
+    fake_while_eq.comparison = 0;
+
+    fake_while_neq.count = 0;
+    fake_while_neq.vm = 0;
+    fake_while_neq.target = 0;
+    fake_while_neq.address = 0;
+    fake_while_neq.comparison = 0;
 }
 
 void fake_read_cb(struct iovm1_t *vm, iovm1_target target, uint32_t *r_address, unsigned len) {
@@ -272,7 +249,7 @@ int test_end(struct iovm1_t *vm) {
     VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_get_exec_state(vm), "state");
 
     // verify invocations:
-    VERIFY_EQ_INT(0, fake_read.count, "iovm1_target_read() invocations");
+    VERIFY_EQ_INT(0, fake_read.count, "read_db() invocations");
     VERIFY_EQ_INT(0, fake_write.count, "write_cb() invocations");
 
     // should end:
@@ -325,7 +302,7 @@ int test_setbank_setoffs(struct iovm1_t *vm) {
     VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_get_exec_state(vm), "state");
 
     // verify invocations:
-    VERIFY_EQ_INT(0, fake_read.count, "iovm1_target_read() invocations");
+    VERIFY_EQ_INT(0, fake_read.count, "read_db() invocations");
     VERIFY_EQ_INT(0, fake_write.count, "write_cb() invocations");
     VERIFY_EQ_INT(0xF50010, (int) vm->a[FAKE_TARGET_2], "a[t]");
 
@@ -430,6 +407,208 @@ int test_while_eq(struct iovm1_t *vm) {
     VERIFY_EQ_INT(target, fake_while_eq.target, "while_eq_cb(_, target, _, _)");
     VERIFY_EQ_INT(0, fake_while_eq.address, "while_eq_cb(_, _, address, _)");
     VERIFY_EQ_INT(0x55, (int) fake_while_eq.comparison, "while_eq_cb(_, _, _, comparison)");
+
+    // should end:
+    r = iovm1_exec_step(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_ENDED, iovm1_get_exec_state(vm), "state");
+
+    return 0;
+}
+
+int test_read_target_2(struct iovm1_t *vm) {
+    int r;
+    int target = FAKE_TARGET_2;
+    uint8_t proc[] = {
+        IOVM1_MKINST(IOVM1_OPCODE_READ, target),
+        0x02,
+        IOVM1_INST_END
+    };
+
+    fake_init_test(vm);
+
+    r = iovm1_load(vm, proc, sizeof(proc));
+    VERIFY_EQ_INT(0, r, "iovm1_load() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_get_exec_state(vm), "state");
+
+    r = iovm1_verify(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_verify() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_VERIFIED, iovm1_get_exec_state(vm), "state");
+
+    // first execution moves to RESET:
+    r = iovm1_exec_step(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_RESET, iovm1_get_exec_state(vm), "state");
+
+    // RESET initializes registers:
+    r = iovm1_exec_step(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_get_exec_state(vm), "state");
+
+    // READ:
+    r = iovm1_exec_step(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_get_exec_state(vm), "state");
+
+    // verify invocations:
+    VERIFY_EQ_INT(1, fake_read.count, "read_cb() invocations");
+    VERIFY_EQ_INT(target, fake_read.target, "read_cb(_, target, _, _)");
+    VERIFY_EQ_INT(target, (int)(fake_read.r_address - vm->a), "read_cb(_, _, r_address, _)");
+    VERIFY_EQ_INT(2, fake_read.len, "read_cb(_, _, _, len)");
+    VERIFY_EQ_INT(2, *fake_read.r_address, "a[t]");
+
+    // should end:
+    r = iovm1_exec_step(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_ENDED, iovm1_get_exec_state(vm), "state");
+
+    return 0;
+}
+
+int test_read_target_3(struct iovm1_t *vm) {
+    int r;
+    int target = FAKE_TARGET_3;
+    uint8_t proc[] = {
+        IOVM1_MKINST(IOVM1_OPCODE_READ, target),
+        0x02,
+        IOVM1_INST_END
+    };
+
+    fake_init_test(vm);
+
+    r = iovm1_load(vm, proc, sizeof(proc));
+    VERIFY_EQ_INT(0, r, "iovm1_load() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_get_exec_state(vm), "state");
+
+    r = iovm1_verify(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_verify() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_VERIFIED, iovm1_get_exec_state(vm), "state");
+
+    // first execution moves to RESET:
+    r = iovm1_exec_step(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_RESET, iovm1_get_exec_state(vm), "state");
+
+    // RESET initializes registers:
+    r = iovm1_exec_step(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_get_exec_state(vm), "state");
+
+    // READ:
+    r = iovm1_exec_step(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_get_exec_state(vm), "state");
+
+    // verify invocations:
+    VERIFY_EQ_INT(1, fake_read.count, "read_cb() invocations");
+    VERIFY_EQ_INT(target, fake_read.target, "read_cb(_, target, _, _)");
+    VERIFY_EQ_INT(target, (int)(fake_read.r_address - vm->a), "read_cb(_, _, r_address, _)");
+    VERIFY_EQ_INT(2, fake_read.len, "read_cb(_, _, _, len)");
+    VERIFY_EQ_INT(2, *fake_read.r_address, "a[t]");
+
+    // should end:
+    r = iovm1_exec_step(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_ENDED, iovm1_get_exec_state(vm), "state");
+
+    return 0;
+}
+
+int test_write_target_2(struct iovm1_t *vm) {
+    int r;
+    int target = FAKE_TARGET_2;
+    uint8_t proc[] = {
+        IOVM1_MKINST(IOVM1_OPCODE_WRITE, target),
+        0x02,
+        0xAA,
+        0x55,
+        IOVM1_INST_END
+    };
+
+    fake_init_test(vm);
+
+    r = iovm1_load(vm, proc, sizeof(proc));
+    VERIFY_EQ_INT(0, r, "iovm1_load() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_get_exec_state(vm), "state");
+
+    r = iovm1_verify(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_verify() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_VERIFIED, iovm1_get_exec_state(vm), "state");
+
+    // first execution moves to RESET:
+    r = iovm1_exec_step(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_RESET, iovm1_get_exec_state(vm), "state");
+
+    // RESET initializes registers:
+    r = iovm1_exec_step(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_get_exec_state(vm), "state");
+
+    // WRITE:
+    r = iovm1_exec_step(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_get_exec_state(vm), "state");
+
+    // verify invocations:
+    VERIFY_EQ_INT(1, fake_write.count, "write_cb() invocations");
+    VERIFY_EQ_INT(target, fake_write.target, "write_cb(_, target, _, _, _)");
+    VERIFY_EQ_INT(target, (int)(fake_write.r_address - vm->a), "write_cb(_, _, r_address, _, _)");
+    VERIFY_EQ_INT(2, (int)(fake_write.i_data - vm->m), "write_cb(_, _, _, i_data, _)");
+    VERIFY_EQ_INT(2, fake_write.len, "write_cb(_, _, _, _, len)");
+    VERIFY_EQ_INT(2, *fake_write.r_address, "a[t]");
+
+    // should end:
+    r = iovm1_exec_step(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_ENDED, iovm1_get_exec_state(vm), "state");
+
+    return 0;
+}
+
+int test_write_target_3(struct iovm1_t *vm) {
+    int r;
+    int target = FAKE_TARGET_3;
+    uint8_t proc[] = {
+        IOVM1_MKINST(IOVM1_OPCODE_WRITE, target),
+        0x02,
+        0xAA,
+        0x55,
+        IOVM1_INST_END
+    };
+
+    fake_init_test(vm);
+
+    r = iovm1_load(vm, proc, sizeof(proc));
+    VERIFY_EQ_INT(0, r, "iovm1_load() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_get_exec_state(vm), "state");
+
+    r = iovm1_verify(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_verify() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_VERIFIED, iovm1_get_exec_state(vm), "state");
+
+    // first execution moves to RESET:
+    r = iovm1_exec_step(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_RESET, iovm1_get_exec_state(vm), "state");
+
+    // RESET initializes registers:
+    r = iovm1_exec_step(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_get_exec_state(vm), "state");
+
+    // WRITE:
+    r = iovm1_exec_step(vm);
+    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
+    VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_get_exec_state(vm), "state");
+
+    // verify invocations:
+    VERIFY_EQ_INT(1, fake_write.count, "write_cb() invocations");
+    VERIFY_EQ_INT(target, fake_write.target, "write_cb(_, target, _, _, _)");
+    VERIFY_EQ_INT(target, (int)(fake_write.r_address - vm->a), "write_cb(_, _, r_address, _, _)");
+    VERIFY_EQ_INT(2, (int)(fake_write.i_data - vm->m), "write_cb(_, _, _, i_data, _)");
+    VERIFY_EQ_INT(2, fake_write.len, "write_cb(_, _, _, _, len)");
+    VERIFY_EQ_INT(2, *fake_write.r_address, "a[t]");
 
     // should end:
     r = iovm1_exec_step(vm);
@@ -555,230 +734,6 @@ int test_reset_from_end(struct iovm1_t *vm) {
     return 0;
 }
 
-int test_read_target_2(struct iovm1_t *vm) {
-    int r;
-    int target = FAKE_TARGET_2;
-    uint8_t proc[] = {
-        IOVM1_MKINST(IOVM1_OPCODE_READ, target),
-        0x02,
-        IOVM1_INST_END
-    };
-
-    fake_init_test(vm);
-
-    r = iovm1_load(vm, proc, sizeof(proc));
-    VERIFY_EQ_INT(0, r, "iovm1_load() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_get_exec_state(vm), "state");
-
-    r = iovm1_verify(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_verify() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_VERIFIED, iovm1_get_exec_state(vm), "state");
-
-    // first execution moves to RESET:
-    r = iovm1_exec_step(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_RESET, iovm1_get_exec_state(vm), "state");
-
-    // RESET initializes registers:
-    r = iovm1_exec_step(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_get_exec_state(vm), "state");
-
-    // READ:
-    r = iovm1_exec_step(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_get_exec_state(vm), "state");
-
-    // verify invocations:
-    VERIFY_EQ_INT(1, fake_read.count, "read_cb() invocations");
-    VERIFY_EQ_INT(target, fake_read.target, "read_cb(_, target, _, _)");
-    VERIFY_EQ_INT(target, (int)(fake_read.r_address - vm->a), "read_cb(_, _, r_address, _)");
-    VERIFY_EQ_INT(2, fake_read.len, "read_cb(_, _, _, len)");
-
-    // should end:
-    r = iovm1_exec_step(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_ENDED, iovm1_get_exec_state(vm), "state");
-
-    return 0;
-}
-
-int test_read_target_3(struct iovm1_t *vm) {
-    int r;
-    int target = FAKE_TARGET_3;
-    uint8_t proc[] = {
-        IOVM1_MKINST(IOVM1_OPCODE_READ, target),
-        0x02,
-        IOVM1_INST_END
-    };
-
-    fake_init_test(vm);
-
-    r = iovm1_load(vm, proc, sizeof(proc));
-    VERIFY_EQ_INT(0, r, "iovm1_load() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_get_exec_state(vm), "state");
-
-    r = iovm1_verify(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_verify() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_VERIFIED, iovm1_get_exec_state(vm), "state");
-
-    // first execution moves to RESET:
-    r = iovm1_exec_step(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_RESET, iovm1_get_exec_state(vm), "state");
-
-    // RESET initializes registers:
-    r = iovm1_exec_step(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_get_exec_state(vm), "state");
-
-    // READ:
-    r = iovm1_exec_step(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_get_exec_state(vm), "state");
-
-    // verify invocations:
-    VERIFY_EQ_INT(1, fake_read.count, "read_cb() invocations");
-    VERIFY_EQ_INT(target, fake_read.target, "read_cb(_, target, _, _)");
-    VERIFY_EQ_INT(target, (int)(fake_read.r_address - vm->a), "read_cb(_, _, r_address, _)");
-    VERIFY_EQ_INT(2, fake_read.len, "read_cb(_, _, _, len)");
-
-    // should end:
-    r = iovm1_exec_step(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_ENDED, iovm1_get_exec_state(vm), "state");
-
-    return 0;
-}
-
-#if 0
-int test_write_sram(struct iovm1_t *vm) {
-    int r;
-    int target = FAKE_TARGET_2;
-    uint8_t proc[] = {
-        IOVM1_MKINST(IOVM1_OPCODE_WRITE, 1, 0, 1, FAKE_TARGET_2),
-        0x99,
-        0
-    };
-
-    fake_init_test(vm);
-
-    r = iovm1_load(vm, proc, sizeof(proc));
-    VERIFY_EQ_INT(0, r, "iovm1_load() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_get_exec_state(vm), "state");
-
-    r = iovm1_verify(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_verify() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_VERIFIED, iovm1_get_exec_state(vm), "state");
-
-    // first execution moves to RESET:
-    r = iovm1_exec_step(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_RESET, iovm1_get_exec_state(vm), "state");
-
-    // RESET initializes registers:
-    r = iovm1_exec_step(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_get_exec_state(vm), "state");
-
-    // entered WRITING state:
-    r = iovm1_exec_step(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_WRITE_LOOP_ITER, iovm1_get_exec_state(vm), "state");
-
-    // performs READ:
-    r = iovm1_exec_step(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_WRITE_LOOP_END, iovm1_get_exec_state(vm), "state");
-
-    // verify invocations:
-    VERIFY_EQ_INT(0, fake_iovm1_target_set_address.count, "iovm1_target_set_address() invocations");
-    VERIFY_EQ_INT(0, fake_iovm1_target_read.count, "iovm1_target_read() invocations");
-
-    VERIFY_EQ_INT(1, fake_iovm1_target_write.count, "write_cb() invocations");
-    VERIFY_EQ_INT(target, fake_iovm1_target_write.target, "write_cb(_, target, _, _)");
-    VERIFY_EQ_INT(1, fake_iovm1_target_write.advance, "write_cb(_, _, advance, _)");
-    VERIFY_EQ_INT(0x99, (int) fake_iovm1_target_write.data, "write_cb(_, _, _, data)");
-
-    VERIFY_EQ_INT(0, fake_iovm1_emit.count, "iovm1_emit() invocations");
-
-    // verify expected behavior:
-    VERIFY_EQ_INT(1, (int) fake_target[target].address, "address");
-    VERIFY_EQ_INT(0x99, (int) fake_target[target].last_write, "byte written");
-    VERIFY_EQ_INT((int) fake_last_emitted, (int) fake_target[target].expected_read, "byte emitted");
-
-    // should end:
-    r = iovm1_exec_step(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_ENDED, iovm1_get_exec_state(vm), "state");
-
-    return 0;
-}
-
-int test_write_snescmd(struct iovm1_t *vm) {
-    int r;
-    int target = FAKE_TARGET_3;
-    uint8_t proc[] = {
-        IOVM1_MKINST(IOVM1_OPCODE_WRITE, 1, 0, 1, target),
-        0xBB,
-        0
-    };
-
-    fake_init_test(vm);
-
-    r = iovm1_load(vm, proc, sizeof(proc));
-    VERIFY_EQ_INT(0, r, "iovm1_load() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_LOADED, iovm1_get_exec_state(vm), "state");
-
-    r = iovm1_verify(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_verify() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_VERIFIED, iovm1_get_exec_state(vm), "state");
-
-    // first execution moves to RESET:
-    r = iovm1_exec_step(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_RESET, iovm1_get_exec_state(vm), "state");
-
-    // RESET initializes registers:
-    r = iovm1_exec_step(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_EXECUTE_NEXT, iovm1_get_exec_state(vm), "state");
-
-    // entered WRITING state:
-    r = iovm1_exec_step(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_WRITE_LOOP_ITER, iovm1_get_exec_state(vm), "state");
-
-    // performs READ:
-    r = iovm1_exec_step(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_WRITE_LOOP_END, iovm1_get_exec_state(vm), "state");
-
-    // verify invocations:
-    VERIFY_EQ_INT(0, fake_iovm1_target_set_address.count, "iovm1_target_set_address() invocations");
-    VERIFY_EQ_INT(0, fake_iovm1_target_read.count, "iovm1_target_read() invocations");
-
-    VERIFY_EQ_INT(1, fake_iovm1_target_write.count, "write_cb() invocations");
-    VERIFY_EQ_INT(target, fake_iovm1_target_write.target, "write_cb(_, target, _, _)");
-    VERIFY_EQ_INT(1, fake_iovm1_target_write.advance, "write_cb(_, _, advance, _)");
-    VERIFY_EQ_INT(0xBB, (int) fake_iovm1_target_write.data, "write_cb(_, _, _, data)");
-
-    VERIFY_EQ_INT(0, fake_iovm1_emit.count, "iovm1_emit() invocations");
-
-    // verify expected behavior:
-    VERIFY_EQ_INT(1, (int) fake_target[target].address, "address");
-    VERIFY_EQ_INT(0xBB, (int) fake_target[target].last_write, "byte written");
-    VERIFY_EQ_INT((int) fake_last_emitted, (int) fake_target[target].expected_read, "byte emitted");
-
-    // should end:
-    r = iovm1_exec_step(vm);
-    VERIFY_EQ_INT(0, r, "iovm1_exec_step() return value");
-    VERIFY_EQ_INT(IOVM1_STATE_ENDED, iovm1_get_exec_state(vm), "state");
-
-    return 0;
-}
-#endif
-
 ///////////////////////////////////////////////////////////////////////////////////////////
 // main runner:
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -808,16 +763,14 @@ int run_test_suite(void) {
     run_test(test_setbank_setoffs)
     run_test(test_while_neq)
     run_test(test_while_eq)
+    run_test(test_read_target_2)
+    run_test(test_read_target_3)
+    run_test(test_write_target_2)
+    run_test(test_write_target_3)
     run_test(test_reset_from_verified)
     run_test(test_reset_from_loaded_fails)
     run_test(test_reset_from_execute_fails)
     run_test(test_reset_from_end)
-    run_test(test_read_target_2)
-    run_test(test_read_target_3)
-#if 0
-    run_test(test_write_sram)
-    run_test(test_write_snescmd)
-#endif
 
     return 0;
 }

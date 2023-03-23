@@ -277,10 +277,6 @@ enum iovm1_error iovm1_exec_step(struct iovm1_t *vm) {
     return IOVM1_SUCCESS;
 }
 
-enum iovm1_state iovm1_get_exec_state(struct iovm1_t *vm) {
-    return s;
-}
-
 #undef a
 #undef p
 #undef x
