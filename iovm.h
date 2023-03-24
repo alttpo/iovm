@@ -401,10 +401,6 @@ enum iovm1_error iovm1_exec_step(struct iovm1_t *vm) {
     uint32_t x;
     unsigned t;
 
-    if (s < IOVM1_STATE_VERIFIED) {
-        return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
-    }
-
     switch (s) {
         case IOVM1_STATE_INIT:
         case IOVM1_STATE_LOADED:
