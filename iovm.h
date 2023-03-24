@@ -55,7 +55,7 @@ opcodes (o):
                     //    write(t, A[t]++, M[P++])
                     //}
 
-  5=WHILE_NEQ:  waits while read(t) != M[P]
+  5=WHILE_NEQ:  waits while read(t, A[t]) != M[P]
                     set Q to M[P++]
 
                     // invoke user-supplied callback function:
@@ -63,7 +63,7 @@ opcodes (o):
                     // expected behavior:
                     //while (read(t, A[t]) != Q) {}
 
-  6=WHILE_EQ:   waits while read_non_advancing(t) == M[P]
+  6=WHILE_EQ:   waits while read(t, A[t]) == M[P]
                     set Q to M[P++]
 
                     // invoke user-supplied callback function:
