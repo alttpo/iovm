@@ -139,12 +139,27 @@ void iovm1_while_eq_cb(struct iovm1_t *vm, iovm1_target target, uint32_t address
 // iovm1_t definition:
 
 struct iovm1_t {
-    enum iovm1_state    s;      // current state
+    // length of linear memory
+    unsigned            len;
+    // linear memory containing procedure instructions and immediate data
+    const uint8_t *     m;
 
-    unsigned            p;      // pointer into m[]
-    uint32_t            a[4];   // target addresses
+    // current state
+    enum iovm1_state    s;
 
+    // pointer into m[]
+    unsigned            p;
+    // target addresses
+    uint32_t            a[4];
+
+    // total number of bytes to read
+    uint32_t            total_read;
+    // total number of bytes to write
+    uint32_t            total_write;
+
+#ifdef IOVM1_USE_USERDATA
     const void *const  *userdata;
+#endif
 
 #ifdef IOVM1_USE_CALLBACKS
     iovm1_read_f        read_cb;
@@ -152,14 +167,6 @@ struct iovm1_t {
     iovm1_while_neq_f   while_neq_cb;
     iovm1_while_eq_f    while_eq_cb;
 #endif
-
-    uint32_t            total_read;     // total number of bytes to read
-    uint32_t            total_write;    // total number of bytes to write
-
-    // length of linear memory
-    unsigned            len;
-    // linear memory containing procedure instructions and immediate data
-    const uint8_t *     m;
 };
 
 // core functions:
@@ -173,8 +180,10 @@ enum iovm1_error iovm1_set_while_neq_cb(struct iovm1_t *vm, iovm1_while_neq_f cb
 enum iovm1_error iovm1_set_while_eq_cb(struct iovm1_t *vm, iovm1_while_eq_f cb);
 #endif
 
+#ifdef IOVM1_USE_USERDATA
 enum iovm1_error iovm1_set_userdata(struct iovm1_t *vm, const void *userdata);
 enum iovm1_error iovm1_get_userdata(struct iovm1_t *vm, const void **o_userdata);
+#endif
 
 enum iovm1_error iovm1_load(struct iovm1_t *vm, const uint8_t *proc, unsigned len);
 
@@ -209,7 +218,9 @@ void iovm1_init(struct iovm1_t *vm) {
         vm->a[t] = 0;
     }
 
+#ifdef IOVM1_USE_USERDATA
     vm->userdata = 0;
+#endif
 
 #ifdef IOVM1_USE_CALLBACKS
     vm->read_cb = 0;
@@ -351,6 +362,7 @@ enum iovm1_error iovm1_verify(struct iovm1_t *vm) {
     return IOVM1_ERROR_OUT_OF_RANGE;
 }
 
+#ifdef IOVM1_USE_USERDATA
 enum iovm1_error iovm1_set_userdata(struct iovm1_t *vm, const void *userdata) {
     vm->userdata = userdata;
     return IOVM1_SUCCESS;
@@ -360,6 +372,7 @@ enum iovm1_error iovm1_get_userdata(struct iovm1_t *vm, const void **o_userdata)
     *o_userdata = vm->userdata;
     return IOVM1_SUCCESS;
 }
+#endif
 
 enum iovm1_error iovm1_get_total_read(struct iovm1_t *vm, uint32_t *o_bytes_read) {
     if (s < IOVM1_STATE_VERIFIED) {
