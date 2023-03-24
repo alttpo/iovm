@@ -9,10 +9,7 @@ all: a.out
 	./a.out
 
 a.out: iovm.o test.o
-	$(CC) $(CFLAGS) test.o iovm.o
-
-iovm.o: iovm.c iovm.h
-	$(CC) $(CFLAGS) -c iovm.c
+	$(CC) $(CFLAGS) test.o
 
 test.o: test.c iovm.h
 	$(CC) $(CFLAGS) -c test.c
