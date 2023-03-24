@@ -120,12 +120,21 @@ enum iovm1_error {
 
 struct iovm1_t;
 
+#ifdef IOVM1_USE_CALLBACKS
 // callback typedefs:
 
 typedef void (*iovm1_read_f)(struct iovm1_t *vm, iovm1_target target, uint32_t *r_address, unsigned len);
 typedef void (*iovm1_write_f)(struct iovm1_t *vm, iovm1_target target, uint32_t *r_address, const uint8_t *i_data, unsigned len);
 typedef void (*iovm1_while_neq_f)(struct iovm1_t *vm, iovm1_target target, uint32_t address, uint8_t comparison);
 typedef void (*iovm1_while_eq_f)(struct iovm1_t *vm, iovm1_target target, uint32_t address, uint8_t comparison);
+#else
+// required function implementations by user:
+
+void iovm1_read_cb(struct iovm1_t *vm, iovm1_target target, uint32_t *r_address, unsigned len);
+void iovm1_write_cb(struct iovm1_t *vm, iovm1_target target, uint32_t *r_address, const uint8_t *i_data, unsigned len);
+void iovm1_while_neq_cb(struct iovm1_t *vm, iovm1_target target, uint32_t address, uint8_t comparison);
+void iovm1_while_eq_cb(struct iovm1_t *vm, iovm1_target target, uint32_t address, uint8_t comparison);
+#endif
 
 // iovm1_t definition:
 
@@ -138,10 +147,12 @@ struct iovm1_t {
 
     const void *const  *userdata;
 
+#ifdef IOVM1_USE_CALLBACKS
     iovm1_read_f        read_cb;
     iovm1_write_f       write_cb;
     iovm1_while_neq_f   while_neq_cb;
     iovm1_while_eq_f    while_eq_cb;
+#endif
 
     uint32_t            total_read;     // total number of bytes to read
     uint32_t            total_write;    // total number of bytes to write
@@ -156,10 +167,12 @@ struct iovm1_t {
 
 void iovm1_init(struct iovm1_t *vm);
 
+#ifdef IOVM1_USE_CALLBACKS
 enum iovm1_error iovm1_set_read_cb(struct iovm1_t *vm, iovm1_read_f cb);
 enum iovm1_error iovm1_set_write_cb(struct iovm1_t *vm, iovm1_write_f cb);
 enum iovm1_error iovm1_set_while_neq_cb(struct iovm1_t *vm, iovm1_while_neq_f cb);
 enum iovm1_error iovm1_set_while_eq_cb(struct iovm1_t *vm, iovm1_while_eq_f cb);
+#endif
 
 enum iovm1_error iovm1_set_userdata(struct iovm1_t *vm, const void *userdata);
 enum iovm1_error iovm1_get_userdata(struct iovm1_t *vm, const void **o_userdata);
@@ -200,10 +213,12 @@ void iovm1_init(struct iovm1_t *vm) {
 
     vm->userdata = 0;
 
+#ifdef IOVM1_USE_CALLBACKS
     vm->read_cb = 0;
     vm->write_cb = 0;
     vm->while_neq_cb = 0;
     vm->while_eq_cb = 0;
+#endif
 
     vm->total_read = 0;
     vm->total_write = 0;
@@ -212,6 +227,7 @@ void iovm1_init(struct iovm1_t *vm) {
     m = 0;
 }
 
+#ifdef IOVM1_USE_CALLBACKS
 enum iovm1_error iovm1_set_read_cb(struct iovm1_t *vm, iovm1_read_f cb) {
     if (!cb) {
         return IOVM1_ERROR_OUT_OF_RANGE;
@@ -251,6 +267,7 @@ enum iovm1_error iovm1_set_while_eq_cb(struct iovm1_t *vm, iovm1_while_eq_f cb) 
 
     return IOVM1_SUCCESS;
 }
+#endif
 
 enum iovm1_error iovm1_load(struct iovm1_t *vm, const uint8_t *proc, unsigned len) {
     if (s != IOVM1_STATE_INIT) {
@@ -275,6 +292,7 @@ enum iovm1_error iovm1_verify(struct iovm1_t *vm) {
         return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
 
+#ifdef IOVM1_USE_CALLBACKS
     // all callbacks are required:
     if (!vm->read_cb) {
         return IOVM1_ERROR_OUT_OF_RANGE;
@@ -288,6 +306,7 @@ enum iovm1_error iovm1_verify(struct iovm1_t *vm) {
     if (!vm->while_eq_cb) {
         return IOVM1_ERROR_OUT_OF_RANGE;
     }
+#endif
 
     unsigned p = 0;
     while (p < vm->len) {
@@ -424,24 +443,42 @@ enum iovm1_error iovm1_exec_step(struct iovm1_t *vm) {
                 case IOVM1_OPCODE_READ: {
                     unsigned c = m[p++];
                     if (c == 0) { c = 256; }
+#ifdef IOVM1_USE_CALLBACKS
                     vm->read_cb(vm, t, &a[t], c);
+#else
+                    iovm1_read_cb(vm, t, &a[t], c);
+#endif
                     break;
                 }
                 case IOVM1_OPCODE_WRITE: {
                     unsigned c = m[p++];
                     if (c == 0) { c = 256; }
+
+#ifdef IOVM1_USE_CALLBACKS
                     vm->write_cb(vm, t, &a[t], &m[p], c);
+#else
+                    iovm1_write_cb(vm, t, &a[t], &m[p], c);
+#endif
                     p += c;
                     break;
                 }
                 case IOVM1_OPCODE_WHILE_NEQ: {
                     uint8_t q = m[p++];
+
+#ifdef IOVM1_USE_CALLBACKS
                     vm->while_neq_cb(vm, t, a[t], q);
+#else
+                    iovm1_while_neq_cb(vm, t, a[t], q);
+#endif
                     break;
                 }
                 case IOVM1_OPCODE_WHILE_EQ: {
                     uint8_t q = m[p++];
+#ifdef IOVM1_USE_CALLBACKS
                     vm->while_eq_cb(vm, t, a[t], q);
+#else
+                    iovm1_while_eq_cb(vm, t, a[t], q);
+#endif
                     break;
                 }
                 default:

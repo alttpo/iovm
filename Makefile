@@ -8,7 +8,7 @@ CFLAGS += -ffunction-sections -fdata-sections
 all: a.out
 	./a.out
 
-a.out: iovm.o test.o
+a.out: test.o
 	$(CC) $(CFLAGS) test.o
 
 test.o: test.c iovm.h

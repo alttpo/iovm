@@ -84,7 +84,7 @@ void fake_reset(void) {
     fake_while_neq.comparison = 0;
 }
 
-void fake_read_cb(struct iovm1_t *vm, iovm1_target target, uint32_t *r_address, unsigned len) {
+void iovm1_read_cb(struct iovm1_t *vm, iovm1_target target, uint32_t *r_address, unsigned len) {
     fake_read.count++;
     fake_read.vm = vm;
     fake_read.target = target;
@@ -96,7 +96,7 @@ void fake_read_cb(struct iovm1_t *vm, iovm1_target target, uint32_t *r_address, 
     *r_address += len;
 }
 
-void fake_write_cb(struct iovm1_t *vm, iovm1_target target, uint32_t *r_address, const uint8_t *i_data, unsigned len) {
+void iovm1_write_cb(struct iovm1_t *vm, iovm1_target target, uint32_t *r_address, const uint8_t *i_data, unsigned len) {
     fake_write.count++;
     fake_write.vm = vm;
     fake_write.target = target;
@@ -109,7 +109,7 @@ void fake_write_cb(struct iovm1_t *vm, iovm1_target target, uint32_t *r_address,
     *r_address += len;
 }
 
-void fake_while_neq_cb(struct iovm1_t *vm, iovm1_target target, uint32_t address, uint8_t comparison) {
+void iovm1_while_neq_cb(struct iovm1_t *vm, iovm1_target target, uint32_t address, uint8_t comparison) {
     fake_while_neq.count++;
     fake_while_neq.vm = vm;
     fake_while_neq.target = target;
@@ -119,7 +119,7 @@ void fake_while_neq_cb(struct iovm1_t *vm, iovm1_target target, uint32_t address
     assert(target < IOVM1_TARGET_COUNT);
 }
 
-void fake_while_eq_cb(struct iovm1_t *vm, iovm1_target target, uint32_t address, uint8_t comparison) {
+void iovm1_while_eq_cb(struct iovm1_t *vm, iovm1_target target, uint32_t address, uint8_t comparison) {
     fake_while_eq.count++;
     fake_while_eq.vm = vm;
     fake_while_eq.target = target;
@@ -131,10 +131,12 @@ void fake_while_eq_cb(struct iovm1_t *vm, iovm1_target target, uint32_t address,
 
 void fake_init_test(struct iovm1_t *vm) {
     iovm1_init(vm);
-    iovm1_set_read_cb(vm, fake_read_cb);
-    iovm1_set_write_cb(vm, fake_write_cb);
-    iovm1_set_while_neq_cb(vm, fake_while_neq_cb);
-    iovm1_set_while_eq_cb(vm, fake_while_eq_cb);
+#ifdef IOVM_USE_CALLBACKS
+    iovm1_set_read_cb(vm, iovm1_read_cb);
+    iovm1_set_write_cb(vm, iovm1_write_cb);
+    iovm1_set_while_neq_cb(vm, iovm1_while_neq_cb);
+    iovm1_set_while_eq_cb(vm, iovm1_while_eq_cb);
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
