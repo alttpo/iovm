@@ -141,7 +141,6 @@ void iovm1_while_eq_cb(struct iovm1_t *vm, iovm1_target target, uint32_t address
 struct iovm1_t {
     enum iovm1_state    s;      // current state
 
-    uint8_t             x;      // current instruction byte
     unsigned            p;      // pointer into m[]
     uint32_t            a[4];   // target addresses
 
@@ -205,7 +204,6 @@ static inline enum iovm1_state iovm1_get_exec_state(struct iovm1_t *vm) {
 void iovm1_init(struct iovm1_t *vm) {
     s = IOVM1_STATE_INIT;
 
-    vm->x = 0;
     vm->p = 0;
     for (unsigned t = 0; t < IOVM1_TARGET_COUNT; t++) {
         vm->a[t] = 0;
@@ -310,7 +308,7 @@ enum iovm1_error iovm1_verify(struct iovm1_t *vm) {
 
     unsigned p = 0;
     while (p < vm->len) {
-        uint8_t x = m[p++];
+        uint32_t x = *(uint32_t *)(&m[p++]);
         enum iovm1_opcode o = IOVM1_INST_OPCODE(x);
         switch (o) {
             case IOVM1_OPCODE_END:
@@ -325,15 +323,17 @@ enum iovm1_error iovm1_verify(struct iovm1_t *vm) {
                 break;
             case IOVM1_OPCODE_READ: {
                 unsigned c;
-                c = m[p++];
+                c = ((x>>8)&0xFF);
                 if (c == 0) { c = 256; }
+                p++;
                 vm->total_read += c;
                 break;
             }
             case IOVM1_OPCODE_WRITE: {
                 unsigned c;
-                c = m[p++];
+                c = ((x>>8)&0xFF);
                 if (c == 0) { c = 256; }
+                p++;
                 p += c;
                 vm->total_write += c;
                 break;
@@ -393,12 +393,12 @@ enum iovm1_error iovm1_exec_reset(struct iovm1_t *vm) {
     return IOVM1_SUCCESS;
 }
 
-#define x vm->x
 #define p vm->p
 #define a vm->a
 
 enum iovm1_error iovm1_exec_step(struct iovm1_t *vm) {
     enum iovm1_opcode o;
+    uint32_t x;
     unsigned t;
 
     if (s < IOVM1_STATE_VERIFIED) {
@@ -416,13 +416,12 @@ enum iovm1_error iovm1_exec_step(struct iovm1_t *vm) {
             break;
         case IOVM1_STATE_RESET:
             // initialize registers:
-            x = 0;
             p = 0;
 
             s = IOVM1_STATE_EXECUTE_NEXT;
             break;
         case IOVM1_STATE_EXECUTE_NEXT:
-            x = m[p++];
+            x = *(uint32_t *)(&m[p++]);
             t = IOVM1_INST_TARGET(x);
             o = IOVM1_INST_OPCODE(x);
             switch (o) {
@@ -430,19 +429,24 @@ enum iovm1_error iovm1_exec_step(struct iovm1_t *vm) {
                     s = IOVM1_STATE_ENDED;
                     return IOVM1_SUCCESS;
                 case IOVM1_OPCODE_SETOFFS: {
-                    uint32_t lo = (uint32_t)m[p++];
-                    uint32_t hi = (uint32_t)m[p++] << 8;
+                    uint32_t lo = (uint32_t)((x>>8)&0xFF);
+                    uint32_t hi = (uint32_t)((x>>16)&0xFF) << 8;
                     a[t] = (a[t] & 0xFF0000) | hi | lo;
+                    p += 2;
                     break;
                 }
                 case IOVM1_OPCODE_SETBANK: {
-                    uint32_t bk = (uint32_t)m[p++] << 16;
+                    uint32_t bk = (uint32_t)((x>>8)&0xFF) << 16;
                     a[t] = (a[t] & 0x00FFFF) | bk;
+                    p++;
                     break;
                 }
                 case IOVM1_OPCODE_READ: {
-                    unsigned c = m[p++];
+                    unsigned c;
+                    c = ((x>>8)&0xFF);
                     if (c == 0) { c = 256; }
+                    p++;
+
 #ifdef IOVM1_USE_CALLBACKS
                     vm->read_cb(vm, t, &a[t], c);
 #else
@@ -451,8 +455,10 @@ enum iovm1_error iovm1_exec_step(struct iovm1_t *vm) {
                     break;
                 }
                 case IOVM1_OPCODE_WRITE: {
-                    unsigned c = m[p++];
+                    unsigned c;
+                    c = ((x>>8)&0xFF);
                     if (c == 0) { c = 256; }
+                    p++;
 
 #ifdef IOVM1_USE_CALLBACKS
                     vm->write_cb(vm, t, &a[t], &m[p], c);
@@ -463,7 +469,9 @@ enum iovm1_error iovm1_exec_step(struct iovm1_t *vm) {
                     break;
                 }
                 case IOVM1_OPCODE_WHILE_NEQ: {
-                    uint8_t q = m[p++];
+                    uint8_t q;
+                    q = ((x>>8)&0xFF);
+                    p++;
 
 #ifdef IOVM1_USE_CALLBACKS
                     vm->while_neq_cb(vm, t, a[t], q);
@@ -473,7 +481,10 @@ enum iovm1_error iovm1_exec_step(struct iovm1_t *vm) {
                     break;
                 }
                 case IOVM1_OPCODE_WHILE_EQ: {
-                    uint8_t q = m[p++];
+                    uint8_t q;
+                    q = ((x>>8)&0xFF);
+                    p++;
+
 #ifdef IOVM1_USE_CALLBACKS
                     vm->while_eq_cb(vm, t, a[t], q);
 #else
@@ -497,7 +508,6 @@ enum iovm1_error iovm1_exec_step(struct iovm1_t *vm) {
 
 #undef a
 #undef p
-#undef x
 #undef s
 #undef m
 
