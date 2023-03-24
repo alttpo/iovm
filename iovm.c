@@ -28,6 +28,7 @@ void iovm1_init(struct iovm1_t *vm) {
     vm->total_read = 0;
     vm->total_write = 0;
 
+    vm->len = 0;
     m = 0;
 }
 
