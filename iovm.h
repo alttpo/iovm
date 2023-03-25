@@ -427,7 +427,7 @@ enum iovm1_error iovm1_verify(struct iovm1_t *vm) {
 
     unsigned p = 0;
     while (p < vm->len) {
-        uint32_t x = *(uint32_t *)(&m[p++]);
+        uint8_t x = m[p++];
         enum iovm1_opcode o = IOVM1_INST_OPCODE(x);
         switch (o) {
             case IOVM1_OPCODE_END:
@@ -444,18 +444,14 @@ enum iovm1_error iovm1_verify(struct iovm1_t *vm) {
                 p += 1;
                 break;
             case IOVM1_OPCODE_READ: {
-                unsigned c;
-                c = ((x>>8)&0xFF);
+                unsigned c = m[p++];
                 if (c == 0) { c = 256; }
-                p++;
                 vm->total_read += c;
                 break;
             }
             case IOVM1_OPCODE_WRITE: {
-                unsigned c;
-                c = ((x>>8)&0xFF);
+                unsigned c = m[p++];
                 if (c == 0) { c = 256; }
-                p++;
                 p += c;
                 vm->total_write += c;
                 break;
