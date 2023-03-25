@@ -4,17 +4,20 @@
 /*
     iovm.h: trivial I/O virtual machine execution engine
 
-    uses user-provided callbacks to perform custom read/write I/O tasks against various memory targets.
+    user provides callback functions to perform custom read/write I/O tasks against various memory targets.
+    callbacks are free to implement behavior however they wish so long as the function contracts are satisfied.
+    it is recommended to place deadline timers on the implementations of while_neq_cb and while_eq_cb callbacks.
+    read_cb and write_cb must always complete.
 
 instructions:
 
    76 54 3210
-  [-n tt oooo]
+  [-- tt nooo]
 
     o = opcode
+    n = do not advance target address after READ/WRITE
+        invert comparison for WHILE_NEQ to act as WHILE_EQ instead
     t = target
-    n = do not advance address after READ/WRITE
-        or invert comparison for WHILE_NEQ
     - = reserved for future extension
 
 memory:
@@ -46,20 +49,19 @@ opcodes (o):
   4=READ:       reads bytes from target
                     set c to m[p++] (translate 0 -> 256, else use 1..255)
 
-                    // invoke user-supplied callback function:
                     read_cb(t, &a[t], c);
                     // expected behavior:
-                    //for n=0; n<c; n++ {
-                    //    read(t, a[t]++)
-                    //}
+                    //  for n=0; n<c; n++ {
+                    //      read(t, a[t]++)
+                    //  }
 
   5=WRITE:      writes bytes to target
                     set c to m[p++] (translate 0 -> 256, else use 1..255)
 
-                    // invoke user-supplied callback function:
                     if n==0 {
                         // write while advancing a[t]:
                         write_cb(t, &a[t], c, &m[p]);
+
                         // expected behavior:
                         //  for n=0; n<c; n++ {
                         //      write(t, a[t]++, m[p++])
@@ -78,27 +80,28 @@ opcodes (o):
   6=WHILE_NEQ:  waits while read(t, a[t]) compares to m[p]
                     set q to m[p++]
 
-                    // invoke user-supplied callback function:
                     if n==0 {
                         // compare with `!=`
                         while_neq_cb(t, a[t], q);
+
                         // expected behavior:
-                        //while (read(t, a[t]) != q) {}
+                        //  while (read(t, a[t]) != q) {}
                     } else {
                         // compare with `==`
                         while_eq_cb(t, a[t], Q);
+
                         // expected behavior:
-                        //while (read(t, a[t]) == q) {}
+                        //  while (read(t, a[t]) == q) {}
                     }
 
-  7..15:        reserved
+  7:            reserved
 */
 
 #include <stdint.h>
 
-#define IOVM1_INST_OPCODE(x)    ((x)&15)
+#define IOVM1_INST_OPCODE(x)    ((x)&7)
 #define IOVM1_INST_TARGET(x)    (((x)>>4)&3)
-#define IOVM1_INST_N_FLAG(x)    (((x)>>6)&1)
+#define IOVM1_INST_N_FLAG(x)    (((x)>>3)&1)
 
 #define IOVM1_INST_END (0)
 
@@ -109,7 +112,7 @@ opcodes (o):
 #define IOVM1_MKINST2(o, t, n) ( \
      ((uint8_t)(o)&15) | \
     (((uint8_t)(t)&3)<<4) | \
-    (((uint8_t)(n)&1)<<6) )
+    (((uint8_t)(n)&1)<<3) )
 
 enum iovm1_opcode {
     IOVM1_OPCODE_END,
@@ -150,6 +153,7 @@ struct iovm1_t;
 // callback typedefs:
 
 typedef void (*iovm1_read_f)(struct iovm1_t *vm, iovm1_target target, uint32_t *r_address, unsigned len);
+// reads from `target` at 24-bit address `*r_address` for `len` bytes in the range [1..256]
 typedef void (*iovm1_read_n_f)(struct iovm1_t *vm, iovm1_target target, uint32_t address, unsigned len);
 typedef void (*iovm1_write_f)(struct iovm1_t *vm, iovm1_target target, uint32_t *r_address, const uint8_t *i_data, unsigned len);
 typedef void (*iovm1_write_n_f)(struct iovm1_t *vm, iovm1_target target, uint32_t address, const uint8_t *i_data, unsigned len);
@@ -158,11 +162,54 @@ typedef void (*iovm1_while_eq_f)(struct iovm1_t *vm, iovm1_target target, uint32
 #else
 // required function implementations by user:
 
+// reads bytes from target and advances the address.
+// inputs:
+//  `target`        identifies target to read from, range [0..3]
+//  `r_address`     points to the 24-bit address managed by IOVM for the given target
+//  `*r_address`    current 24-bit address for the given target to begin reading at
+//  `len`           length in bytes to read, range [1..256]
+// outputs:
+//  `*r_address`    must be updated to be input `*r_address` + `len`
 void iovm1_read_cb(struct iovm1_t *vm, iovm1_target target, uint32_t *r_address, unsigned len);
+
+// reads bytes from target but does not advance the address.
+// inputs:
+//  `target`        identifies target to read from, range [0..3]
+//  `address`       current 24-bit address for the given target to begin reading at
+//  `len`           length in bytes to read, range [1..256]
 void iovm1_read_n_cb(struct iovm1_t *vm, iovm1_target target, uint32_t address, unsigned len);
+
+// writes bytes from procedure memory to target and advances the address.
+// inputs:
+//  `target`        identifies target to read from, range [0..3]
+//  `r_address`     points to the 24-bit address managed by IOVM for the given target
+//  `*r_address`    current 24-bit address for the given target to begin reading at
+//  `i_data`        pointer to procedure memory to transfer data from
+//  `len`           length in bytes to read, range [1..256]
+// outputs:
+//  `*r_address`    must be updated to be input `*r_address` + `len`
 void iovm1_write_cb(struct iovm1_t *vm, iovm1_target target, uint32_t *r_address, const uint8_t *i_data, unsigned len);
+
+// writes bytes from procedure memory to target but does not advance the address.
+// inputs:
+//  `target`        identifies target to read from, range [0..3]
+//  `r_address`     current 24-bit address for the given target to begin reading at
+//  `i_data`        pointer to procedure memory to transfer data from
+//  `len`           length in bytes to read, range [1..256]
 void iovm1_write_n_cb(struct iovm1_t *vm, iovm1_target target, uint32_t address, const uint8_t *i_data, unsigned len);
+
+// loops while reading a byte from target while it != comparison byte. does not advance the address.
+// inputs:
+//  `target`        identifies target to read from, range [0..3]
+//  `address`       current 24-bit address for the given target to read from
+//  `comparison`    comparison byte
 void iovm1_while_neq_cb(struct iovm1_t *vm, iovm1_target target, uint32_t address, uint8_t comparison);
+
+// loops while reading a byte from target while it == comparison byte. does not advance the address.
+// inputs:
+//  `target`        identifies target to read from, range [0..3]
+//  `address`       current 24-bit address for the given target to read from
+//  `comparison`    comparison byte
 void iovm1_while_eq_cb(struct iovm1_t *vm, iovm1_target target, uint32_t address, uint8_t comparison);
 #endif
 
