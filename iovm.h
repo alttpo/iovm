@@ -11,18 +11,16 @@
 
 instructions:
 
-   76 54 3210
-  [-- tt nooo]
+   765 43210
+  [ttt ooooo]
 
-    o = opcode
-    n = do not advance target address after READ/WRITE
-        invert comparison for WHILE_NEQ to act as WHILE_EQ instead
-    t = target
+    o = opcode (0..31)
+    t = target (0..7)
     - = reserved for future extension
 
 memory:
     m[1...]:    linear memory of procedure, at least 1 byte
-    a[4]:       24-bit address for each target, indexed by `t`
+    a[8]:       24-bit address for each target, indexed by `t`
 
  registers:
     p:          points to current byte in m
@@ -55,64 +53,71 @@ opcodes (o):
                     //      read(t, a[t]++)
                     //  }
 
-  5=WRITE:      writes bytes to target
+  5=READ_N:     reads bytes from target
                     set c to m[p++] (translate 0 -> 256, else use 1..255)
 
-                    if n==0 {
-                        // write while advancing a[t]:
-                        write_cb(t, &a[t], c, &m[p]);
+                    read_n_cb(t, a[t], c);
 
-                        // expected behavior:
-                        //  for n=0; n<c; n++ {
-                        //      write(t, a[t]++, m[p++])
-                        //  }
-                    } else {
-                        // write without advancing a[t]:
-                        write_n_cb(t, a[t], c, &m[p]);
+                    // expected behavior:
+                    //  set tmp = a[t]
+                    //  for n=0; n<c; n++ {
+                    //      read(t, tmp++)
+                    //  }
 
-                        // expected behavior:
-                        //  set tmp=a[t]
-                        //  for n=0; n<c; n++ {
-                        //      write(t, tmp++, m[p++])
-                        //  }
-                    }
+  6=WRITE:      writes bytes to target
+                    set c to m[p++] (translate 0 -> 256, else use 1..255)
 
-  6=WHILE_NEQ:  waits while read(t, a[t]) compares to m[p]
+                    // write while advancing a[t]:
+                    write_cb(t, &a[t], c, &m[p]);
+
+                    // expected behavior:
+                    //  for n=0; n<c; n++ {
+                    //      write(t, a[t]++, m[p++])
+                    //  }
+
+  7=WRITE_N:    writes bytes to target
+                    set c to m[p++] (translate 0 -> 256, else use 1..255)
+
+                    // write without advancing a[t]:
+                    write_n_cb(t, a[t], c, &m[p]);
+
+                    // expected behavior:
+                    //  set tmp=a[t]
+                    //  for n=0; n<c; n++ {
+                    //      write(t, tmp++, m[p++])
+                    //  }
+
+  8=WHILE_NEQ:  waits while read(t, a[t]) != m[p]
                     set q to m[p++]
 
-                    if n==0 {
-                        // compare with `!=`
-                        while_neq_cb(t, a[t], q);
+                    // compare with `!=`
+                    while_neq_cb(t, a[t], q);
 
-                        // expected behavior:
-                        //  while (read(t, a[t]) != q) {}
-                    } else {
-                        // compare with `==`
-                        while_eq_cb(t, a[t], Q);
+                    // expected behavior:
+                    //  while (read(t, a[t]) != q) {}
 
-                        // expected behavior:
-                        //  while (read(t, a[t]) == q) {}
-                    }
+  9=WHILE_EQ:   waits while read(t, a[t]) == m[p]
+                    set q to m[p++]
 
-  7:            reserved
+                    // compare with `==`
+                    while_eq_cb(t, a[t], Q);
+
+                    // expected behavior:
+                    //  while (read(t, a[t]) == q) {}
+
+  10..31:       reserved
 */
 
 #include <stdint.h>
 
-#define IOVM1_INST_OPCODE(x)    ((x)&7)
-#define IOVM1_INST_TARGET(x)    (((x)>>4)&3)
-#define IOVM1_INST_N_FLAG(x)    (((x)>>3)&1)
+#define IOVM1_INST_OPCODE(x)    ((x)&31)
+#define IOVM1_INST_TARGET(x)    (((x)>>5)&7)
 
 #define IOVM1_INST_END (0)
 
 #define IOVM1_MKINST(o, t) ( \
-     ((uint8_t)(o)&15) | \
-    (((uint8_t)(t)&3)<<4) )
-
-#define IOVM1_MKINST2(o, t, n) ( \
-     ((uint8_t)(o)&15) | \
-    (((uint8_t)(t)&3)<<4) | \
-    (((uint8_t)(n)&1)<<3) )
+     ((uint8_t)(o)&31) | \
+    (((uint8_t)(t)&7)<<5) )
 
 enum iovm1_opcode {
     IOVM1_OPCODE_END,
@@ -120,13 +125,16 @@ enum iovm1_opcode {
     IOVM1_OPCODE_SETOFFS,
     IOVM1_OPCODE_SETBANK,
     IOVM1_OPCODE_READ,
+    IOVM1_OPCODE_READ_N,
     IOVM1_OPCODE_WRITE,
-    IOVM1_OPCODE_WHILE_NEQ
+    IOVM1_OPCODE_WRITE_N,
+    IOVM1_OPCODE_WHILE_NEQ,
+    IOVM1_OPCODE_WHILE_EQ
 };
 
 typedef unsigned iovm1_target;
 
-#define IOVM1_TARGET_COUNT  (4)
+#define IOVM1_TARGET_COUNT  (8)
 
 enum iovm1_state {
     IOVM1_STATE_INIT,
@@ -378,6 +386,9 @@ enum iovm1_error iovm1_set_while_eq_cb(struct iovm1_t *vm, iovm1_while_eq_f cb) 
 
     return IOVM1_SUCCESS;
 }
+#  define IOVM1_INVOKE_CALLBACK(name, ...) vm->name(vm, __VA_ARGS__)
+#else
+#  define IOVM1_INVOKE_CALLBACK(name, ...) iovm1_##name(vm, __VA_ARGS__)
 #endif
 
 enum iovm1_error iovm1_load(struct iovm1_t *vm, const uint8_t *proc, unsigned len) {
@@ -443,13 +454,15 @@ enum iovm1_error iovm1_verify(struct iovm1_t *vm) {
             case IOVM1_OPCODE_SETBANK:
                 p += 1;
                 break;
-            case IOVM1_OPCODE_READ: {
+            case IOVM1_OPCODE_READ:
+            case IOVM1_OPCODE_READ_N: {
                 unsigned c = m[p++];
                 if (c == 0) { c = 256; }
                 vm->total_read += c;
                 break;
             }
-            case IOVM1_OPCODE_WRITE: {
+            case IOVM1_OPCODE_WRITE:
+            case IOVM1_OPCODE_WRITE_N: {
                 unsigned c = m[p++];
                 if (c == 0) { c = 256; }
                 p += c;
@@ -457,6 +470,7 @@ enum iovm1_error iovm1_verify(struct iovm1_t *vm) {
                 break;
             }
             case IOVM1_OPCODE_WHILE_NEQ:
+            case IOVM1_OPCODE_WHILE_EQ:
                 p++;
                 break;
             default:
@@ -543,7 +557,6 @@ static inline enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
         }
 
         unsigned t = IOVM1_INST_TARGET(x);
-        unsigned n = IOVM1_INST_N_FLAG(x);
         switch (o) {
             case IOVM1_OPCODE_SETADDR: {
                 uint32_t lo = (uint32_t)(m[p++]);
@@ -567,57 +580,42 @@ static inline enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 unsigned c = m[p++];
                 if (c == 0) { c = 256; }
 
-#ifdef IOVM1_USE_CALLBACKS
-                if (n == 0) {
-                        vm->read_cb(vm, t, &a[t], c);
-                    } else {
-                        vm->read_n_cb(vm, t, a[t], c);
-                    }
-#else
-                if (n == 0) {
-                    iovm1_read_cb(vm, t, &a[t], c);
-                } else {
-                    iovm1_read_n_cb(vm, t, a[t], c);
-                }
-#endif
+                IOVM1_INVOKE_CALLBACK(read_cb, t, &a[t], c);
+                return IOVM1_SUCCESS;
+            }
+            case IOVM1_OPCODE_READ_N: {
+                unsigned c = m[p++];
+                if (c == 0) { c = 256; }
+
+                IOVM1_INVOKE_CALLBACK(read_n_cb, t, a[t], c);
                 return IOVM1_SUCCESS;
             }
             case IOVM1_OPCODE_WRITE: {
                 unsigned c = m[p++];
                 if (c == 0) { c = 256; }
 
-#ifdef IOVM1_USE_CALLBACKS
-                if (n == 0) {
-                        vm->write_cb(vm, t, &a[t], &m[p], c);
-                    } else {
-                        vm->write_n_cb(vm, t, a[t], &m[p], c);
-                    }
-#else
-                if (n == 0) {
-                    iovm1_write_cb(vm, t, &a[t], &m[p], c);
-                } else {
-                    iovm1_write_n_cb(vm, t, a[t], &m[p], c);
-                }
-#endif
+                IOVM1_INVOKE_CALLBACK(write_cb, t, &a[t], &m[p], c);
+                p += c;
+                return IOVM1_SUCCESS;
+            }
+            case IOVM1_OPCODE_WRITE_N: {
+                unsigned c = m[p++];
+                if (c == 0) { c = 256; }
+
+                IOVM1_INVOKE_CALLBACK(write_n_cb, t, a[t], &m[p], c);
                 p += c;
                 return IOVM1_SUCCESS;
             }
             case IOVM1_OPCODE_WHILE_NEQ: {
                 uint8_t q = m[p++];
 
-#ifdef IOVM1_USE_CALLBACKS
-                if (n == 0) {
-                        vm->while_neq_cb(vm, t, a[t], q);
-                    } else {
-                        vm->while_eq_cb(vm, t, a[t], q);
-                    }
-#else
-                if (n == 0) {
-                    iovm1_while_neq_cb(vm, t, a[t], q);
-                } else {
-                    iovm1_while_eq_cb(vm, t, a[t], q);
-                }
-#endif
+                IOVM1_INVOKE_CALLBACK(while_neq_cb, t, a[t], q);
+                return IOVM1_SUCCESS;
+            }
+            case IOVM1_OPCODE_WHILE_EQ: {
+                uint8_t q = m[p++];
+
+                IOVM1_INVOKE_CALLBACK(while_eq_cb, t, a[t], q);
                 return IOVM1_SUCCESS;
             }
             default:

@@ -9,7 +9,7 @@ int tests_failed = 0;
 
 #define VERIFY_EQ_INT(expected, got, name) \
     do if ((expected) != (got)) { \
-        fprintf(stdout, "L%d: expected %s of %d 0x%x; got %d 0x%x\n", __LINE__, name, expected, expected, got, got); \
+        fprintf(stdout, "L%d: expected %s of %u 0x%x; got %u 0x%x\n", __LINE__, name, expected, expected, got, got); \
         return 1; \
     } while (0)
 
@@ -476,7 +476,7 @@ int test_while_eq(struct iovm1_t *vm) {
     int r;
     int target = FAKE_TARGET_2;
     uint8_t proc[] = {
-        IOVM1_MKINST2(IOVM1_OPCODE_WHILE_NEQ, target, 1),
+        IOVM1_MKINST(IOVM1_OPCODE_WHILE_EQ, target),
         0x55,
         IOVM1_INST_END
     };
