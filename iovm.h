@@ -435,9 +435,10 @@ static inline enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 return IOVM1_SUCCESS;
             }
             case IOVM1_OPCODE_WRITE: {
-                cb_state.len = m.ptr[m.off++];
-                if (cb_state.len == 0) { cb_state.len = 256; }
+                uint32_t c = m.ptr[m.off++];
+                if (c == 0) { c = 256; }
 
+                cb_state.len = c;
                 cb_state.i_data = m;
                 cb_state.address = a[t];
                 IOVM1_INVOKE_CALLBACK(write_cb, &cb_state);
@@ -447,9 +448,10 @@ static inline enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 return IOVM1_SUCCESS;
             }
             case IOVM1_OPCODE_WRITE_N: {
-                cb_state.len = m.ptr[m.off++];
-                if (cb_state.len == 0) { cb_state.len = 256; }
+                uint32_t c = m.ptr[m.off++];
+                if (c == 0) { c = 256; }
 
+                cb_state.len = c;
                 cb_state.i_data = m;
                 cb_state.address = a[t];
                 IOVM1_INVOKE_CALLBACK(write_cb, &cb_state);
