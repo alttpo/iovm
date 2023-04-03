@@ -141,6 +141,7 @@ enum iovm1_state {
     IOVM1_STATE_LOADED,
     IOVM1_STATE_RESET,
     IOVM1_STATE_EXECUTE_NEXT,
+    IOVM1_STATE_STALLED,
     IOVM1_STATE_ENDED
 };
 
@@ -150,6 +151,15 @@ enum iovm1_error {
     IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE,
     IOVM1_ERROR_VM_UNKNOWN_OPCODE,
 };
+
+// required byte stream:
+
+enum iovm1_stream_error_e {
+    IOVM1_STREAM_OK,
+    IOVM1_STREAM_EOF,
+    IOVM1_STREAM_STALLED
+};
+enum iovm1_stream_error_e iovm1_stream_in(uint32_t i_size, uint32_t *o_size, uint8_t *o_bytes);
 
 struct bslice {
     const uint8_t  *ptr;
@@ -442,6 +452,12 @@ static inline enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 cb_state.i_data = m;
                 cb_state.address = a[t];
                 IOVM1_INVOKE_CALLBACK(write_cb, &cb_state);
+
+                if (m.off + c >= m.len) {
+                    // stall until the next buffer comes in:
+                    s = IOVM1_STATE_STALLED;
+                }
+
                 a[t] = cb_state.address;
                 m = cb_state.i_data;
 
@@ -455,6 +471,13 @@ static inline enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 cb_state.i_data = m;
                 cb_state.address = a[t];
                 IOVM1_INVOKE_CALLBACK(write_cb, &cb_state);
+
+                if (m.off + c >= m.len) {
+                    // stall until the next buffer comes in:
+                    s = IOVM1_STATE_STALLED;
+                    cb_state.len -= (cb_state.i_data.off - m.off);
+                }
+
                 m = cb_state.i_data;
 
                 return IOVM1_SUCCESS;
