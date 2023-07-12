@@ -45,18 +45,18 @@ opcodes (o):
                     set a[t] = bk | (a[t] & 0x00FFFF)
 
   4=READ:       reads bytes from target
-                    set c to m[p++] (translate 0 -> 256, else use 1..255)
+                    set len to m[p++] (translate 0 -> 256, else use 1..255)
 
-                    read_cb(t, &a[t], c);
+                    read_cb(t, &a[t], len);
                     // expected behavior:
                     //  for n=0; n<c; n++ {
                     //      read(t, a[t]++)
                     //  }
 
-  5=READ_N:     reads bytes from target
-                    set c to m[p++] (translate 0 -> 256, else use 1..255)
+  5=READ_N:     reads bytes from target without advancing address after complete
+                    set len to m[p++] (translate 0 -> 256, else use 1..255)
 
-                    read_n_cb(t, a[t], c);
+                    read_n_cb(t, a[t], len);
 
                     // expected behavior:
                     //  set tmp = a[t]
@@ -65,21 +65,21 @@ opcodes (o):
                     //  }
 
   6=WRITE:      writes bytes to target
-                    set c to m[p++] (translate 0 -> 256, else use 1..255)
+                    set len to m[p++] (translate 0 -> 256, else use 1..255)
 
                     // write while advancing a[t]:
-                    write_cb(t, &a[t], c, &m[p]);
+                    write_cb(t, &a[t], len, &m[p]);
 
                     // expected behavior:
                     //  for n=0; n<c; n++ {
                     //      write(t, a[t]++, m[p++])
                     //  }
 
-  7=WRITE_N:    writes bytes to target
-                    set c to m[p++] (translate 0 -> 256, else use 1..255)
+  7=WRITE_N:    writes bytes to target without advancing address after complete
+                    set len to m[p++] (translate 0 -> 256, else use 1..255)
 
                     // write without advancing a[t]:
-                    write_n_cb(t, a[t], c, &m[p]);
+                    write_n_cb(t, a[t], len, &m[p]);
 
                     // expected behavior:
                     //  set tmp=a[t]
@@ -87,7 +87,7 @@ opcodes (o):
                     //      write(t, tmp++, m[p++])
                     //  }
 
-  8=WHILE_NEQ:  waits while read(t, a[t]) != m[p]
+  8=WHILE_NEQ:  waits while read_byte(t, a[t]) != m[p]
                     set q to m[p++]
 
                     // compare with `!=`
@@ -96,7 +96,7 @@ opcodes (o):
                     // expected behavior:
                     //  while (read(t, a[t]) != q) {}
 
-  9=WHILE_EQ:   waits while read(t, a[t]) == m[p]
+  9=WHILE_EQ:   waits while read_byte(t, a[t]) == m[p]
                     set q to m[p++]
 
                     // compare with `==`
@@ -109,15 +109,6 @@ opcodes (o):
 */
 
 #include <stdint.h>
-
-#define IOVM1_INST_OPCODE(x)    ((x)&31)
-#define IOVM1_INST_TARGET(x)    (((x)>>5)&7)
-
-#define IOVM1_INST_END (0)
-
-#define IOVM1_MKINST(o, t) ( \
-     ((uint8_t)(o)&31) | \
-    (((uint8_t)(t)&7)<<5) )
 
 enum iovm1_opcode {
     IOVM1_OPCODE_END,
@@ -135,6 +126,15 @@ enum iovm1_opcode {
 typedef unsigned iovm1_target;
 
 #define IOVM1_TARGET_COUNT  (8)
+
+#define IOVM1_INST_OPCODE(x)    ((enum iovm1_opcode) ((x)&31))
+#define IOVM1_INST_TARGET(x)    ((iovm1_target) (((x)>>5)&7))
+
+#define IOVM1_INST_END (0)
+
+#define IOVM1_MKINST(o, t) ( \
+     ((uint8_t)(o)&31) | \
+    (((uint8_t)(t)&7)<<5) )
 
 enum iovm1_state {
     IOVM1_STATE_INIT,
