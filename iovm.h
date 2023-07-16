@@ -189,16 +189,16 @@ typedef void (*iovm1_callback_f)(struct iovm1_state_t *cb_state);
 // required function implementations by user:
 
 // reads bytes from target.
-void iovm1_read_cb(struct iovm1_state_t *cb_state);
+void iovm1_read_cb(struct iovm1_state_t *s);
 
 // writes bytes from procedure memory to target.
-void iovm1_write_cb(struct iovm1_state_t *cb_state);
+void iovm1_write_cb(struct iovm1_state_t *s);
 
 // loops while reading a byte from target while it != comparison byte.
-void iovm1_while_neq_cb(struct iovm1_state_t *cb_state);
+void iovm1_while_neq_cb(struct iovm1_state_t *s);
 
 // loops while reading a byte from target while it == comparison byte.
-void iovm1_while_eq_cb(struct iovm1_state_t *cb_state);
+void iovm1_while_eq_cb(struct iovm1_state_t *s);
 #endif
 
 // iovm1_t definition:
