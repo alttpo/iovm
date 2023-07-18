@@ -8,108 +8,115 @@ extern "C" {
 /*
     iovm.h: trivial I/O virtual machine execution engine
 
-    user provides callback functions to perform custom read/write I/O tasks against various memory targets.
-    callbacks are free to implement behavior however they wish so long as the function contracts are satisfied.
-    it is recommended to place deadline timers on the implementations of while_neq_cb and while_eq_cb callbacks.
-    read_cb and write_cb must always complete.
+    features:
+        * max of 16 instruction opcodes
+        * no branching instructions
+
+    host provides a callback function to implement read/write I/O tasks against memory targets. callbacks are
+    re-entrant.
+
+    the virtual machine consists of 16 registers which are 24-bit address into memory targets identified by an
+    8-bit unsigned integer. it is recommended to keep memory targets as linear address spaces.
 
 instructions:
 
-   765 43210
-  [ttt ooooo]
+   7654 3210
+  [rrrr oooo]
 
-    o = opcode (0..31)
-    t = target (0..7)
-    - = reserved for future extension
+    o = opcode   [0..15]
+    r = register [0..15]
 
 memory:
-    m[1...]:    linear memory of procedure, at least 1 byte
-    a[8]:       24-bit address for each target, indexed by `t`
+    m[...]:         program memory, at least 1 byte
 
- registers:
-    p:          points to current byte in m
+registers:
+    u32 p:          points to current byte in m
+    u8  t[0..15]:   target identifier for each register
+    u24 a[0..15]:   target 24-bit address for each register
+
+cbs:                callback state struct
+    u8      o;          // opcode
+    u8      r;          // register
+    u8      t;          // target
+    u24     a;          // address
+    u32     len;        // length of read/write
+    u8      c;          // comparison byte
+    u32     p;          // program memory address
+    bool    completed;  // callback completed
 
 opcodes (o):
-  0=END:        ends procedure
+  0=END:                ends procedure
 
-  1=SETADDR:    sets target address 24-bit
-                    set lo = m[p++]
-                    set hi = m[p++] << 8
-                    set bk = m[p++] << 16
-                    set a[t] = bk | hi | lo
+  1=SETADDR:            sets register to target and 24-bit address within
+        set t[r] = m[p++]
+        set lo = m[p++]
+        set hi = m[p++] << 8
+        set bk = m[p++] << 16
+        set a[r] = bk | hi | lo
 
-  2=SETOFFS:    sets target address 16-bit offset within bank
-                    set lo = m[p++]
-                    set hi = m[p++] << 8
-                    set a[t] = (a[t] & 0xFF0000) | hi | lo
+  2=READ:               reads bytes from target; advance address after completed
+        set cbs.len = m[p++] // (translate 0 -> 256, else use 1..255)
+        set cbs.t = t[r]
+        set cbs.a = a[r]
+        set cbs.p = p
+        set cbs.completed = false
+        cb(vm, cbs)
+        if cbs.completed {
+            a[r] = cbs.a;
+        }
 
-  3=SETBANK:    sets target address 8-bit bank
-                    // replace bank byte:
-                    set bk = m[p++] << 16
-                    set a[t] = bk | (a[t] & 0x00FFFF)
+  3=READ_N:             reads bytes from target; no advance address after completed
+        set cbs.len = m[p++] // (translate 0 -> 256, else use 1..255)
+        set cbs.t = t[r]
+        set cbs.a = a[r]
+        set cbs.p = p
+        set cbs.completed = false
+        cb(vm, cbs)
 
-  4=READ:       reads bytes from target
-                    set len to m[p++] (translate 0 -> 256, else use 1..255)
+  4=WRITE:              writes bytes to target; advance address after completed
+        set cbs.len = m[p++] // (translate 0 -> 256, else use 1..255)
+        set cbs.t = t[r]
+        set cbs.a = a[r]
+        set cbs.p = p
+        set cbs.completed = false
+        cb(vm, cbs)
+        if cbs.completed {
+            a[r] = cbs.a;
+        }
 
-                    read_cb(t, &a[t], len);
-                    // expected behavior:
-                    //  for n=0; n<c; n++ {
-                    //      read(t, a[t]++)
-                    //  }
+  5=WRITE_N:            writes bytes to target without advancing address after complete
+        set cbs.len = m[p++] // (translate 0 -> 256, else use 1..255)
+        set cbs.t = t[r]
+        set cbs.a = a[r]
+        set cbs.p = p
+        set cbs.completed = false
+        cb(vm, cbs);
 
-  5=READ_N:     reads bytes from target without advancing address after complete
-                    set len to m[p++] (translate 0 -> 256, else use 1..255)
+  6=WAIT_WHILE_NEQ:     waits while read_byte(t, a[t]) != m[p]
+        set cbs.c = m[p++]
+        set cbs.len = 0
+        set cbs.t = t[r]
+        set cbs.a = a[r]
+        set cbs.p = p
+        set cbs.completed = false
+        cb(vm, cbs);
 
-                    read_n_cb(t, a[t], len);
+        // expected behavior:
+        //  while (read_byte(cbs.t, cbs.a) != cbs.c) {}
 
-                    // expected behavior:
-                    //  set tmp = a[t]
-                    //  for n=0; n<c; n++ {
-                    //      read(t, tmp++)
-                    //  }
+  7=WAIT_WHILE_EQ:      waits while read_byte(t, a[t]) == m[p]
+        set cbs.c = m[p++]
+        set cbs.len = 0
+        set cbs.t = t[r]
+        set cbs.a = a[r]
+        set cbs.p = p
+        set cbs.completed = false
+        cb(vm, cbs);
 
-  6=WRITE:      writes bytes to target
-                    set len to m[p++] (translate 0 -> 256, else use 1..255)
+        // expected behavior:
+        //  while (read_byte(cbs.t, cbs.a) == cbs.c) {}
 
-                    // write while advancing a[t]:
-                    write_cb(t, &a[t], len, &m[p]);
-
-                    // expected behavior:
-                    //  for n=0; n<c; n++ {
-                    //      write(t, a[t]++, m[p++])
-                    //  }
-
-  7=WRITE_N:    writes bytes to target without advancing address after complete
-                    set len to m[p++] (translate 0 -> 256, else use 1..255)
-
-                    // write without advancing a[t]:
-                    write_n_cb(t, a[t], len, &m[p]);
-
-                    // expected behavior:
-                    //  set tmp=a[t]
-                    //  for n=0; n<c; n++ {
-                    //      write(t, tmp++, m[p++])
-                    //  }
-
-  8=WHILE_NEQ:  waits while read_byte(t, a[t]) != m[p]
-                    set q to m[p++]
-
-                    // compare with `!=`
-                    while_neq_cb(t, a[t], q);
-
-                    // expected behavior:
-                    //  while (read(t, a[t]) != q) {}
-
-  9=WHILE_EQ:   waits while read_byte(t, a[t]) == m[p]
-                    set q to m[p++]
-
-                    // compare with `==`
-                    while_eq_cb(t, a[t], Q);
-
-                    // expected behavior:
-                    //  while (read(t, a[t]) == q) {}
-
-  10..31:       reserved
+  8..15:        reserved
 */
 
 #include <stdint.h>
@@ -118,8 +125,6 @@ opcodes (o):
 enum iovm1_opcode {
     IOVM1_OPCODE_END,
     IOVM1_OPCODE_SETADDR,
-    IOVM1_OPCODE_SETOFFS,
-    IOVM1_OPCODE_SETBANK,
     IOVM1_OPCODE_READ,
     IOVM1_OPCODE_READ_N,
     IOVM1_OPCODE_WRITE,
@@ -128,25 +133,27 @@ enum iovm1_opcode {
     IOVM1_OPCODE_WHILE_EQ
 };
 
-typedef unsigned iovm1_target;
+typedef uint8_t iovm1_register;
 
-#define IOVM1_TARGET_COUNT  (8)
+#define IOVM1_REGISTER_COUNT    (16)
 
-#define IOVM1_INST_OPCODE(x)    ((enum iovm1_opcode) ((x)&31))
-#define IOVM1_INST_TARGET(x)    ((iovm1_target) (((x)>>5)&7))
+#define IOVM1_INST_OPCODE(x)    ((enum iovm1_opcode) ((x)&15))
+#define IOVM1_INST_REGISTER(x)  ((iovm1_register) (((x)>>4)&15))
 
 #define IOVM1_INST_END (0)
 
-#define IOVM1_MKINST(o, t) ( \
-     ((uint8_t)(o)&31) | \
-    (((uint8_t)(t)&7)<<5) )
+#define IOVM1_MKINST(o, r) ( \
+     ((uint8_t)(o)&15) | \
+    (((uint8_t)(r)&15)<<4) )
+
+typedef uint8_t iovm1_target;
 
 enum iovm1_state {
     IOVM1_STATE_INIT,
     IOVM1_STATE_LOADED,
     IOVM1_STATE_RESET,
     IOVM1_STATE_EXECUTE_NEXT,
-    IOVM1_STATE_STALLED,
+    IOVM1_STATE_RESUME_CALLBACK,
     IOVM1_STATE_ENDED
 };
 
@@ -165,40 +172,32 @@ struct bslice {
 
 struct iovm1_t;
 
-struct iovm1_state_t {
-    struct iovm1_t *vm;
+struct iovm1_callback_state_t {
+    struct iovm1_t      *vm;    // vm struct
 
-    enum iovm1_opcode opcode;
+    enum iovm1_opcode   o;      // opcode
+    uint8_t             r;      // register number used for address
 
-    iovm1_target target;
-    uint32_t address;
-    unsigned len;
+    iovm1_target        t;      // 8-bit identifier of memory target
+    uint32_t            a;      // 24-bit address into memory target
 
-    struct bslice i_data;
+    unsigned            len;    // length remaining of read/write
+    uint8_t             c;      // comparison byte
+    unsigned            p;      // program memory address
 
-    uint8_t comparison;
-
-    bool completed;
+    bool completed;             // whether callback is complete
 };
 
 #ifdef IOVM1_USE_CALLBACKS
 // callback typedef:
 
-typedef void (*iovm1_callback_f)(struct iovm1_state_t *cb_state);
+typedef void (*iovm1_callback_f)(struct iovm1_t *vm, struct iovm1_callback_state_t *cbs);
 #else
 // required function implementations by user:
 
-// reads bytes from target.
-void iovm1_read_cb(struct iovm1_state_t *s);
+// handle all opcode callbacks (switch on cbs->o):
+void iovm1_opcode_cb(struct iovm1_t *vm, struct iovm1_callback_state_t *cbs);
 
-// writes bytes from procedure memory to target.
-void iovm1_write_cb(struct iovm1_state_t *s);
-
-// loops while reading a byte from target while it != comparison byte.
-void iovm1_while_neq_cb(struct iovm1_state_t *s);
-
-// loops while reading a byte from target while it == comparison byte.
-void iovm1_while_eq_cb(struct iovm1_state_t *s);
 #endif
 
 // iovm1_t definition:
@@ -209,21 +208,20 @@ struct iovm1_t {
 
     // current state
     enum iovm1_state s;
-    // target addresses
-    uint32_t a[IOVM1_TARGET_COUNT];
 
-    // state for resumption:
-    struct iovm1_state_t cb_state;
+    // registers:
+    uint32_t t[IOVM1_REGISTER_COUNT];   // target identifier
+    uint32_t a[IOVM1_REGISTER_COUNT];   // 24-bit address
+
+    // state for callback resumption:
+    struct iovm1_callback_state_t cbs;
 
 #ifdef IOVM1_USE_USERDATA
     void *userdata;
 #endif
 
 #ifdef IOVM1_USE_CALLBACKS
-    iovm1_callback_f        read_cb;
-    iovm1_callback_f        write_cb;
-    iovm1_callback_f        while_neq_cb;
-    iovm1_callback_f        while_eq_cb;
+    iovm1_callback_f        opcode_cb;
 #endif
 };
 

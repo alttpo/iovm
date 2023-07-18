@@ -6,14 +6,11 @@ extern "C" {
 
 // iovm implementation
 
-#define s vm->s
-#define m vm->m
-
 void iovm1_init(struct iovm1_t *vm) {
-    s = IOVM1_STATE_INIT;
+    vm->s = IOVM1_STATE_INIT;
 
-    for (unsigned t = 0; t < IOVM1_TARGET_COUNT; t++) {
-        vm->a[t] = 0;
+    for (unsigned r = 0; r < IOVM1_REGISTER_COUNT; r++) {
+        vm->a[r] = 0;
     }
 
 #ifdef IOVM1_USE_USERDATA
@@ -27,60 +24,28 @@ void iovm1_init(struct iovm1_t *vm) {
     vm->while_eq_cb = 0;
 #endif
 
-    vm->cb_state.vm = vm;
-
-    m.ptr = 0;
-    m.len = 0;
-    m.off = 0;
+    vm->m.ptr = 0;
+    vm->m.len = 0;
+    vm->m.off = 0;
 }
 
 #ifdef IOVM1_USE_CALLBACKS
-enum iovm1_error iovm1_set_read_cb(struct iovm1_t *vm, iovm1_callback_f cb) {
+enum iovm1_error iovm1_set_opcode_cb(struct iovm1_t *vm, iovm1_callback_f cb) {
     if (!cb) {
         return IOVM1_ERROR_OUT_OF_RANGE;
     }
 
-    vm->read_cb = cb;
+    vm->opcode_cb = cb;
 
     return IOVM1_SUCCESS;
 }
-
-enum iovm1_error iovm1_set_write_cb(struct iovm1_t *vm, iovm1_callback_f cb) {
-    if (!cb) {
-        return IOVM1_ERROR_OUT_OF_RANGE;
-    }
-
-    vm->write_cb = cb;
-
-    return IOVM1_SUCCESS;
-}
-
-enum iovm1_error iovm1_set_while_neq_cb(struct iovm1_t *vm, iovm1_callback_f cb) {
-    if (!cb) {
-        return IOVM1_ERROR_OUT_OF_RANGE;
-    }
-
-    vm->while_neq_cb = cb;
-
-    return IOVM1_SUCCESS;
-}
-
-enum iovm1_error iovm1_set_while_eq_cb(struct iovm1_t *vm, iovm1_callback_f cb) {
-    if (!cb) {
-        return IOVM1_ERROR_OUT_OF_RANGE;
-    }
-
-    vm->while_eq_cb = cb;
-
-    return IOVM1_SUCCESS;
-}
-#  define IOVM1_INVOKE_CALLBACK(name, ...) vm->name(__VA_ARGS__)
+#  define IOVM1_INVOKE_CALLBACK(...) vm->opcode_cb(__VA_ARGS__)
 #else
-#  define IOVM1_INVOKE_CALLBACK(name, ...) iovm1_##name(__VA_ARGS__)
+#  define IOVM1_INVOKE_CALLBACK(...) iovm1_opcode_cb(__VA_ARGS__)
 #endif
 
 enum iovm1_error iovm1_load(struct iovm1_t *vm, const uint8_t *proc, unsigned len) {
-    if (s != IOVM1_STATE_INIT) {
+    if (vm->s != IOVM1_STATE_INIT) {
         return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
 
@@ -89,11 +54,11 @@ enum iovm1_error iovm1_load(struct iovm1_t *vm, const uint8_t *proc, unsigned le
         return IOVM1_ERROR_OUT_OF_RANGE;
     }
 
-    m.ptr = proc;
-    m.len = len;
-    m.off = 0;
+    vm->m.ptr = proc;
+    vm->m.len = len;
+    vm->m.off = 0;
 
-    s = IOVM1_STATE_LOADED;
+    vm->s = IOVM1_STATE_LOADED;
 
     return IOVM1_SUCCESS;
 }
@@ -109,144 +74,112 @@ void *iovm1_get_userdata(struct iovm1_t *vm) {
 #endif
 
 enum iovm1_error iovm1_exec_reset(struct iovm1_t *vm) {
-    if (s < IOVM1_STATE_LOADED) {
+    if (vm->s < IOVM1_STATE_LOADED) {
         return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
-    if (s >= IOVM1_STATE_EXECUTE_NEXT && s < IOVM1_STATE_ENDED) {
+    if (vm->s >= IOVM1_STATE_EXECUTE_NEXT && vm->s < IOVM1_STATE_ENDED) {
         return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
 
-    s = IOVM1_STATE_RESET;
+    vm->s = IOVM1_STATE_RESET;
     return IOVM1_SUCCESS;
 }
 
-#define a vm->a
-#define cb_state vm->cb_state
-#define t cb_state.target
-
 // executes the IOVM procedure instructions up to and including the next callback and then returns immediately after
 enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
-    if (s < IOVM1_STATE_LOADED) {
+    if (vm->s == IOVM1_STATE_RESUME_CALLBACK) {
+        // continually invoke the callback function until it sets completed=true
+        IOVM1_INVOKE_CALLBACK(vm, &vm->cbs);
+
+        // handle completion:
+        if (vm->cbs.completed) {
+            switch (vm->cbs.o) {
+                case IOVM1_OPCODE_READ:
+                    // update register's address post-completion:
+                    vm->a[vm->cbs.r] = vm->cbs.a;
+                    break;
+                case IOVM1_OPCODE_WRITE:
+                    // update register's address post-completion:
+                    vm->a[vm->cbs.r] = vm->cbs.a;
+                    // fallthrough:
+                case IOVM1_OPCODE_WRITE_N:
+                    // update program pointer after WRITE or WRITE_N:
+                    vm->m.off = vm->cbs.p;
+                    break;
+                default:
+                    break;
+            }
+
+            vm->s = IOVM1_STATE_EXECUTE_NEXT;
+        }
+
+        return IOVM1_SUCCESS;
+    }
+
+    if (vm->s < IOVM1_STATE_LOADED) {
         // must be VERIFIED before executing:
         return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
     }
-    if (s == IOVM1_STATE_LOADED) {
-        s = IOVM1_STATE_RESET;
+    if (vm->s == IOVM1_STATE_LOADED) {
+        vm->s = IOVM1_STATE_RESET;
     }
-    if (s == IOVM1_STATE_RESET) {
+    if (vm->s == IOVM1_STATE_RESET) {
         // initialize registers:
-        m.off = 0;
+        vm->m.off = 0;
+        vm->cbs.o = (enum iovm1_opcode) 0;
+        vm->cbs.r = 0;
+        vm->cbs.a = 0;
+        vm->cbs.t = 0;
+        vm->cbs.p = 0;
+        vm->cbs.c = 0;
+        vm->cbs.len = 0;
+        vm->cbs.completed = false;
 
-        s = IOVM1_STATE_EXECUTE_NEXT;
+        vm->s = IOVM1_STATE_EXECUTE_NEXT;
     }
 
-    while (s == IOVM1_STATE_EXECUTE_NEXT) {
-        uint32_t last_pc = m.off;
-        uint8_t x = m.ptr[m.off++];
+    while (vm->s == IOVM1_STATE_EXECUTE_NEXT) {
+        uint8_t x = vm->m.ptr[vm->m.off++];
 
-        cb_state.opcode = IOVM1_INST_OPCODE(x);
-        if (cb_state.opcode == IOVM1_OPCODE_END) {
-            s = IOVM1_STATE_ENDED;
+        vm->cbs.o = IOVM1_INST_OPCODE(x);
+        if (vm->cbs.o == IOVM1_OPCODE_END) {
+            vm->s = IOVM1_STATE_ENDED;
             return IOVM1_SUCCESS;
         }
 
-        t = IOVM1_INST_TARGET(x);
-        switch (cb_state.opcode) {
+        vm->cbs.r = IOVM1_INST_REGISTER(x);
+        vm->cbs.a = vm->a[vm->cbs.r];
+        vm->cbs.t = vm->t[vm->cbs.r];
+        vm->cbs.p = vm->m.off;
+        vm->cbs.completed = false;
+
+        switch (vm->cbs.o) {
             case IOVM1_OPCODE_SETADDR: {
-                uint32_t lo = (uint32_t)(m.ptr[m.off++]);
-                uint32_t hi = (uint32_t)(m.ptr[m.off++]) << 8;
-                uint32_t bk = (uint32_t)(m.ptr[m.off++]) << 16;
-                a[t] = bk | hi | lo;
+                vm->t[vm->cbs.r] = vm->m.ptr[vm->m.off++];
+                uint32_t lo = (uint32_t)(vm->m.ptr[vm->m.off++]);
+                uint32_t hi = (uint32_t)(vm->m.ptr[vm->m.off++]) << 8;
+                uint32_t bk = (uint32_t)(vm->m.ptr[vm->m.off++]) << 16;
+                vm->a[vm->cbs.r] = bk | hi | lo;
                 break;
             }
-            case IOVM1_OPCODE_SETOFFS: {
-                uint32_t lo = (uint32_t)(m.ptr[m.off++]);
-                uint32_t hi = (uint32_t)(m.ptr[m.off++]) << 8;
-                a[t] = (a[t] & 0xFF0000) | hi | lo;
-                break;
-            }
-            case IOVM1_OPCODE_SETBANK: {
-                uint32_t bk = (uint32_t)(m.ptr[m.off++]) << 16;
-                a[t] = (a[t] & 0x00FFFF) | bk;
-                break;
-            }
-            case IOVM1_OPCODE_READ: {
-                cb_state.len = m.ptr[m.off++];
-                if (cb_state.len == 0) { cb_state.len = 256; }
-
-                cb_state.i_data = m;
-                cb_state.address = a[t];
-                IOVM1_INVOKE_CALLBACK(read_cb, &cb_state);
-                a[t] = cb_state.address;
-
-                return IOVM1_SUCCESS;
-            }
-            case IOVM1_OPCODE_READ_N: {
-                cb_state.len = m.ptr[m.off++];
-                if (cb_state.len == 0) { cb_state.len = 256; }
-
-                cb_state.i_data = m;
-                cb_state.address = a[t];
-                IOVM1_INVOKE_CALLBACK(read_cb, &cb_state);
-
-                return IOVM1_SUCCESS;
-            }
-            case IOVM1_OPCODE_WRITE: {
-                uint32_t c = m.ptr[m.off++];
-                if (c == 0) { c = 256; }
-
-                cb_state.len = c;
-                cb_state.i_data = m;
-                cb_state.address = a[t];
-                IOVM1_INVOKE_CALLBACK(write_cb, &cb_state);
-
-                a[t] = cb_state.address;
-                m = cb_state.i_data;
-
-                return IOVM1_SUCCESS;
-            }
+            case IOVM1_OPCODE_READ:
+            case IOVM1_OPCODE_READ_N:
+            case IOVM1_OPCODE_WRITE:
             case IOVM1_OPCODE_WRITE_N: {
-                uint32_t c = m.ptr[m.off++];
-                if (c == 0) { c = 256; }
+                vm->cbs.len = vm->m.ptr[vm->m.off++];
+                if (vm->cbs.len == 0) { vm->cbs.len = 256; }
 
-                cb_state.len = c;
-                cb_state.i_data = m;
-                cb_state.address = a[t];
-                IOVM1_INVOKE_CALLBACK(write_cb, &cb_state);
-
-                m = cb_state.i_data;
+                vm->cbs.p = vm->m.off;
+                vm->s = IOVM1_STATE_RESUME_CALLBACK;
 
                 return IOVM1_SUCCESS;
             }
-            case IOVM1_OPCODE_WHILE_NEQ: {
-                cb_state.comparison = m.ptr[m.off++];
-
-                cb_state.i_data = m;
-                cb_state.address = a[t];
-                // mark subsequent callback as completed by default:
-                cb_state.completed = true;
-                IOVM1_INVOKE_CALLBACK(while_neq_cb, &cb_state);
-
-                // repeat the instruction if the callback failed or aborted:
-                if (!cb_state.completed) {
-                    m.off = last_pc;
-                }
-
-                return IOVM1_SUCCESS;
-            }
+            case IOVM1_OPCODE_WHILE_NEQ:
             case IOVM1_OPCODE_WHILE_EQ: {
-                cb_state.comparison = m.ptr[m.off++];
+                vm->cbs.c = vm->m.ptr[vm->m.off++];
 
-                cb_state.i_data = m;
-                cb_state.address = a[t];
-                // mark subsequent callback as completed by default:
-                cb_state.completed = true;
-                IOVM1_INVOKE_CALLBACK(while_eq_cb, &cb_state);
-
-                // repeat the instruction if the callback failed or aborted:
-                if (!cb_state.completed) {
-                    m.off = last_pc;
-                }
+                vm->cbs.p = vm->m.off;
+                vm->s = IOVM1_STATE_RESUME_CALLBACK;
 
                 return IOVM1_SUCCESS;
             }
@@ -258,11 +191,6 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
 
     return IOVM1_SUCCESS;
 }
-
-#undef cb_state
-#undef a
-#undef s
-#undef m
 
 #ifdef __cplusplus
 }
