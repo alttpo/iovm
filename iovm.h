@@ -6,117 +6,107 @@ extern "C" {
 #endif
 
 /*
-    iovm.h: trivial I/O virtual machine execution engine
+    iovm.h: memory I/O virtual machine
 
-    features:
-        * max of 16 instruction opcodes
-        * no branching instructions
-
-    host provides a callback function to implement read/write I/O tasks against memory targets. callbacks are
-    re-entrant.
-
-    the virtual machine consists of 16 registers which are 24-bit address into memory targets identified by an
-    8-bit unsigned integer. it is recommended to keep memory targets as linear address spaces.
+    host provides a callback function to implement the I/O instructions.
 
 instructions:
 
-   7654 3210
-  [rrrr oooo]
+   76543210
+  [rr--oooo]
 
     o = opcode   [0..15]
-    r = register [0..15]
+    r = register [0..3]
 
 memory:
-    m[...]:         program memory, at least 1 byte
+    m[...]:             program memory, at least 1 byte
 
 registers:
-    u32 p:          points to current byte in m
-    u8  t[0..15]:   target identifier for each register
-    u24 a[0..15]:   target 24-bit address for each register
+    u32     p:          points to current byte in m
 
-cbs:                callback state struct
-    u8      o;          // opcode
-    u8      r;          // register
-    u8      t;          // target
-    u24     a;          // address
-    u32     len;        // length of read/write
-    u8      c;          // comparison byte
-    u32     p;          // program memory address
-    bool    completed;  // callback completed
+    u24     a[0..3]:    24-bit memory target address registers #0..3
+
+    u8      tv[0..3]:   memory target and auto-advance registers #0..3
+                        [00000000]
+                        [76543210]
+                         v-tttttt
+
+                            v = auto-advance address on read/write by len
+                            t = memory target (0..63)
+
+    u16     len:        transfer length register
+    u8      cmp:        comparison value register
+    u8      msk:        comparison mask register
+    u32     tim:        timeout register in host-defined time units
 
 opcodes (o):
   0=END:                ends procedure
 
-  1=SETADDR:            sets register to target and 24-bit address within
-        set t[r] = m[p++]
+  1=SETA8:              sets address register to 8-bit value
+        set lo = m[p++]
+        set a[r] = lo
+
+  2=SETA16:             sets address register to 16-bit value
+        set lo = m[p++]
+        set hi = m[p++] << 8
+        set a[r] = hi | lo
+
+  3=SETA24:             sets address register to 24-bit value
         set lo = m[p++]
         set hi = m[p++] << 8
         set bk = m[p++] << 16
         set a[r] = bk | hi | lo
 
-  2=READ:               reads bytes from target; advance address after completed
-        set cbs.len = m[p++] // (translate 0 -> 256, else use 1..255)
-        set cbs.t = t[r]
-        set cbs.a = a[r]
-        set cbs.p = p
-        set cbs.completed = false
-        cb(vm, cbs)
-        if cbs.completed {
-            a[r] = cbs.a;
-        }
+  4=SETTV:              sets memory target and auto-advance bit of address register
+        set tv[r] = m[p++]
 
-  3=READ_N:             reads bytes from target; no advance address after completed
-        set cbs.len = m[p++] // (translate 0 -> 256, else use 1..255)
-        set cbs.t = t[r]
-        set cbs.a = a[r]
-        set cbs.p = p
-        set cbs.completed = false
-        cb(vm, cbs)
+  5=SETLEN:             sets transfer length register
+        set len = m[p++]
+        if len == 0 then set len = 256
 
-  4=WRITE:              writes bytes to target; advance address after completed
-        set cbs.len = m[p++] // (translate 0 -> 256, else use 1..255)
-        set cbs.t = t[r]
-        set cbs.a = a[r]
-        set cbs.p = p
-        set cbs.completed = false
-        cb(vm, cbs)
-        if cbs.completed {
-            a[r] = cbs.a;
-        }
+  6=SETCMPMSK:          sets comparison value and comparison mask registers
+        set cmp = m[p++]
+        set msk = m[p++]
 
-  5=WRITE_N:            writes bytes to target without advancing address after complete
-        set cbs.len = m[p++] // (translate 0 -> 256, else use 1..255)
-        set cbs.t = t[r]
-        set cbs.a = a[r]
-        set cbs.p = p
-        set cbs.completed = false
-        cb(vm, cbs);
+  7=SETTIM:             sets timeout in host-defined duration units
+        set b0 = m[p++]
+        set b1 = m[p++] << 8
+        set b2 = m[p++] << 16
+        set b3 = m[p++] << 24
+        set tim = b3 | b2 | b1 | b0
 
-  6=WAIT_WHILE_NEQ:     waits while read_byte(t, a[t]) != m[p]
-        set cbs.c = m[p++]
-        set cbs.len = 0
-        set cbs.t = t[r]
-        set cbs.a = a[r]
-        set cbs.p = p
-        set cbs.completed = false
-        cb(vm, cbs);
+  8=READ:               I/O. reads bytes from memory target
 
-        // expected behavior:
-        //  while (read_byte(cbs.t, cbs.a) != cbs.c) {}
+  9=WRITE:              I/O. writes bytes to memory target
 
-  7=WAIT_WHILE_EQ:      waits while read_byte(t, a[t]) == m[p]
-        set cbs.c = m[p++]
-        set cbs.len = 0
-        set cbs.t = t[r]
-        set cbs.a = a[r]
-        set cbs.p = p
-        set cbs.completed = false
-        cb(vm, cbs);
+  10=WAIT_WHILE_NEQ:    I/O. waits while (read_byte(tv[r], a[r]) & msk) != cmp
 
-        // expected behavior:
-        //  while (read_byte(cbs.t, cbs.a) == cbs.c) {}
+  11=WAIT_WHILE_EQ:     I/O. waits while (read_byte(tv[r], a[r]) & msk) == cmp
 
-  8..15:        reserved
+  12=WAIT_WHILE_LT:     I/O. waits while (read_byte(tv[r], a[r]) & msk) < cmp
+
+  13=WAIT_WHILE_GT:     I/O. waits while (read_byte(tv[r], a[r]) & msk) > cmp
+
+  14=WAIT_WHILE_LTE:    I/O. waits while (read_byte(tv[r], a[r]) & msk) <= cmp
+
+  15=WAIT_WHILE_GTE:    I/O. waits while (read_byte(tv[r], a[r]) & msk) >= cmp
+
+
+cbs:                    callback state struct
+    u32     p;          // program memory address
+    u8      o;          // opcode
+    u8      r;          // address register number
+    u8      t;          // memory target identifier
+    bool    v;          // auto-advance address
+    u32     a;          // memory target address
+    u16     len_ini;    // initial transfer length
+    u16     len_rem;    // remaining transfer length
+    u8      cmp;        // comparison value
+    u8      msk;        // comparison mask
+    u32     tim_ini;    // initial timeout
+    u32     tim_rem;    // remaining timeout
+    bool    completed;  // callback will be continually invoked until true
+
 */
 
 #include <stdint.h>
