@@ -10,55 +10,64 @@ extern "C" {
 
     host provides a callback function to implement the I/O instructions.
 
+    two main I/O operations are read and write
+
 instructions:
 
    76543210
-  [rr--oooo]
+  [--ccoooo]
 
-    o = opcode   [0..15]
-    r = register [0..3]
+    o = opcode  [0..15]
+    c = channel [0..3]
 
 memory:
     m[...]:             program memory, at least 1 byte
 
 registers:
     u32     p:          points to current byte in m
+                        initial value = 0
 
-    u24     a[0..3]:    24-bit memory target address registers #0..3
+    u24     a[0..3]:    24-bit memory target address register
+                        initial value = 0
 
-    u8      tv[0..3]:   memory target and auto-advance registers #0..3
-                        [00000000]
+    u8      tv[0..3]:   memory target and auto-advance register
+                        initial value = 0
+
                         [76543210]
                          v-tttttt
 
                             v = auto-advance address on read/write by len
                             t = memory target (0..63)
 
-    u16     len:        transfer length register
-    u8      cmp:        comparison value register
-    u8      msk:        comparison mask register
-    u32     tim:        timeout register in host-defined time units
+    u16     len[0..3]:  transfer length register (0..256)
+                        initial value = 0
+    u8      cmp[0..3]:  comparison value register
+                        initial value = 0
+    u8      msk[0..3]:  comparison mask register
+                        initial value = 255
+    u32     tim[0..3]:  timeout register in host-defined time units
+                        initial value = 0
 
 opcodes (o):
   0=END:                ends procedure
 
   1=SETA8:              sets address register to 8-bit value
         set lo = m[p++]
-        set a[r] = lo
+        set a[c] = lo
 
   2=SETA16:             sets address register to 16-bit value
         set lo = m[p++]
         set hi = m[p++] << 8
-        set a[r] = hi | lo
+        set a[c] = hi | lo
 
   3=SETA24:             sets address register to 24-bit value
         set lo = m[p++]
         set hi = m[p++] << 8
         set bk = m[p++] << 16
-        set a[r] = bk | hi | lo
+        set a[c] = bk | hi | lo
 
   4=SETTV:              sets memory target and auto-advance bit of address register
-        set tv[r] = m[p++]
+        set tv[c] = m[p++]
 
   5=SETLEN:             sets transfer length register
         set len = m[p++]
@@ -68,44 +77,43 @@ opcodes (o):
         set cmp = m[p++]
         set msk = m[p++]
 
-  7=SETTIM:             sets timeout in host-defined duration units
+  7=SETTIM:             sets wait timeout in host-defined duration units
         set b0 = m[p++]
         set b1 = m[p++] << 8
         set b2 = m[p++] << 16
         set b3 = m[p++] << 24
         set tim = b3 | b2 | b1 | b0
 
-  8=READ:               I/O. reads bytes from memory target
+  8=READ:               I/O. reads `len` bytes from memory target.
 
-  9=WRITE:              I/O. writes bytes to memory target
+  9=WRITE:              I/O. writes bytes to memory target from next `len` bytes of program memory.
 
-  10=WAIT_WHILE_NEQ:    I/O. waits while (read_byte(tv[r], a[r]) & msk) != cmp
+  10=WAIT_WHILE_NEQ:    I/O. waits while (read_byte(tv[c], a[c]) & msk) != cmp or until `tim` expires.
 
-  11=WAIT_WHILE_EQ:     I/O. waits while (read_byte(tv[r], a[r]) & msk) == cmp
+  11=WAIT_WHILE_EQ:     I/O. waits while (read_byte(tv[c], a[c]) & msk) == cmp or until `tim` expires.
 
-  12=WAIT_WHILE_LT:     I/O. waits while (read_byte(tv[r], a[r]) & msk) < cmp
+  12=WAIT_WHILE_LT:     I/O. waits while (read_byte(tv[c], a[c]) & msk) < cmp or until `tim` expires.
 
-  13=WAIT_WHILE_GT:     I/O. waits while (read_byte(tv[r], a[r]) & msk) > cmp
+  13=WAIT_WHILE_GT:     I/O. waits while (read_byte(tv[c], a[c]) & msk) > cmp or until `tim` expires.
 
-  14=WAIT_WHILE_LTE:    I/O. waits while (read_byte(tv[r], a[r]) & msk) <= cmp
+  14=WAIT_WHILE_LTE:    I/O. waits while (read_byte(tv[c], a[c]) & msk) <= cmp or until `tim` expires.
 
-  15=WAIT_WHILE_GTE:    I/O. waits while (read_byte(tv[r], a[r]) & msk) >= cmp
+  15=WAIT_WHILE_GTE:    I/O. waits while (read_byte(tv[c], a[c]) & msk) >= cmp or until `tim` expires.
 
 
 cbs:                    callback state struct
+    bool    init;       // host sets this. true if initial callback invocation; false if subsequent callback
+    bool    completed;  // callback sets this. callback will be invoked until true
     u32     p;          // program memory address
     u8      o;          // opcode
-    u8      r;          // address register number
+    u8      c;          // channel
     u8      t;          // memory target identifier
     bool    v;          // auto-advance address
     u32     a;          // memory target address
-    u16     len_ini;    // initial transfer length
-    u16     len_rem;    // remaining transfer length
+    u16     len;        // remaining transfer length
+    u32     tim;        // remaining timeout
     u8      cmp;        // comparison value
     u8      msk;        // comparison mask
-    u32     tim_ini;    // initial timeout
-    u32     tim_rem;    // remaining timeout
-    bool    completed;  // callback will be continually invoked until true
 
 */
 
