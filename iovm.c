@@ -186,9 +186,11 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 vm->tv[vm->cbs.c] = vm->m.ptr[vm->m.off++];
                 break;
             case IOVM1_OPCODE_SETLEN:
-                vm->len[vm->cbs.c] = vm->m.ptr[vm->m.off++];
+                b0 = (uint32_t)(vm->m.ptr[vm->m.off++]);
+                b1 = (uint32_t)(vm->m.ptr[vm->m.off++]) << 8;
+                vm->len[vm->cbs.c] = b1 | b0;
                 if (vm->len[vm->cbs.c] == 0) {
-                    vm->len[vm->cbs.c] = 256;
+                    vm->len[vm->cbs.c] = 65536;
                 }
                 break;
             case IOVM1_OPCODE_SETCMPMSK:

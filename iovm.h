@@ -39,7 +39,7 @@ registers:
                             v = auto-advance address on read/write by len
                             t = memory target (0..63)
 
-    u16     len[0..3]:  transfer length register (0..256)
+    u32     len[0..3]:  transfer length register (1..65536)
                         initial value = 0
     u32     tim[0..3]:  timeout register in host-defined time units
                         initial value = 0
@@ -52,26 +52,28 @@ opcodes (o):
   0=END:                ends procedure
 
   1=SETA8:              sets address register to 8-bit value
-        set lo = m[p++]
-        set a[c] = lo
+        set b0 = m[p++]
+        set a[c] = b0
 
   2=SETA16:             sets address register to 16-bit value
-        set lo = m[p++]
-        set hi = m[p++] << 8
-        set a[c] = hi | lo
+        set b0 = m[p++]
+        set b1 = m[p++] << 8
+        set a[c] = b1 | b0
 
   3=SETA24:             sets address register to 24-bit value
-        set lo = m[p++]
-        set hi = m[p++] << 8
-        set bk = m[p++] << 16
-        set a[c] = bk | hi | lo
+        set b0 = m[p++]
+        set b1 = m[p++] << 8
+        set b2 = m[p++] << 16
+        set a[c] = b2 | b1 | b0
 
   4=SETTV:              sets memory target and auto-advance bit of address register
         set tv[c] = m[p++]
 
   5=SETLEN:             sets transfer length register
-        set len = m[p++]
-        if len == 0 then set len = 256
+        set b0 = m[p++]
+        set b1 = m[p++] << 8
+        set len = b1 | b0
+        if len == 0 then set len = 65536
 
   6=SETCMPMSK:          sets comparison value and comparison mask registers
         set cmp = m[p++]
@@ -198,8 +200,8 @@ struct iovm1_callback_state_t {
     bool                v;          // ro. auto-advance address
     uint32_t            a;          // rw. 24-bit address into memory target
 
-    unsigned            len;        // rw. remaining transfer length
-    unsigned            tim;        // rw. remaining timeout
+    uint32_t            len;        // rw. remaining transfer length
+    uint32_t            tim;        // rw. remaining timeout
     uint8_t             cmp;        // ro. comparison byte
     uint8_t             msk;        // ro. comparison mask
 };
@@ -228,7 +230,7 @@ struct iovm1_t {
     // registers:
     uint32_t    a[IOVM1_CHANNEL_COUNT];     // 24-bit address
     uint8_t     tv[IOVM1_CHANNEL_COUNT];    // target identifier
-    uint16_t    len[IOVM1_CHANNEL_COUNT];   // transfer length
+    uint32_t    len[IOVM1_CHANNEL_COUNT];   // transfer length
     uint32_t    tim[IOVM1_CHANNEL_COUNT];   // timeout
     uint8_t     cmp[IOVM1_CHANNEL_COUNT];   // comparison byte
     uint8_t     msk[IOVM1_CHANNEL_COUNT];   // comparison mask
