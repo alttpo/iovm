@@ -9,8 +9,13 @@ extern "C" {
 void iovm1_init(struct iovm1_t *vm) {
     vm->s = IOVM1_STATE_INIT;
 
-    for (unsigned r = 0; r < IOVM1_REGISTER_COUNT; r++) {
-        vm->a[r] = 0;
+    for (unsigned c = 0; c < IOVM1_CHANNEL_COUNT; c++) {
+        vm->a[c] = 0;
+        vm->tv[c] = 0;
+        vm->len[c] = 0;
+        vm->tim[c] = 0;
+        vm->cmp[c] = 0;
+        vm->msk[c] = 0xFF;
     }
 
 #ifdef IOVM1_USE_USERDATA
@@ -91,19 +96,24 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
         // continually invoke the callback function until it sets completed=true
         IOVM1_INVOKE_CALLBACK(vm, &vm->cbs);
 
+        // clear initial run flag:
+        vm->cbs.initial = false;
+
         // handle completion:
-        if (vm->cbs.completed) {
+        if (vm->cbs.complete) {
             switch (vm->cbs.o) {
                 case IOVM1_OPCODE_READ:
-                    // update register's address post-completion:
-                    vm->a[vm->cbs.r] = vm->cbs.a;
+                    if ((vm->tv[vm->cbs.c] & 0x80) != 0) {
+                        // update register's address post-completion:
+                        vm->a[vm->cbs.c] = vm->cbs.a;
+                    }
                     break;
                 case IOVM1_OPCODE_WRITE:
-                    // update register's address post-completion:
-                    vm->a[vm->cbs.r] = vm->cbs.a;
-                    // fallthrough:
-                case IOVM1_OPCODE_WRITE_N:
-                    // update program pointer after WRITE or WRITE_N:
+                    if ((vm->tv[vm->cbs.c] & 0x80) != 0) {
+                        // update register's address post-completion:
+                        vm->a[vm->cbs.c] = vm->cbs.a;
+                    }
+                    // update program pointer after WRITE:
                     vm->m.off = vm->cbs.p;
                     break;
                 default:
@@ -127,13 +137,16 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
         // initialize registers:
         vm->m.off = 0;
         vm->cbs.o = (enum iovm1_opcode) 0;
-        vm->cbs.r = 0;
+        vm->cbs.c = 0;
         vm->cbs.a = 0;
         vm->cbs.t = 0;
         vm->cbs.p = 0;
-        vm->cbs.c = 0;
+        vm->cbs.cmp = 0;
+        vm->cbs.msk = 0xFF;
         vm->cbs.len = 0;
-        vm->cbs.completed = false;
+        vm->cbs.tim = 0;
+        vm->cbs.initial = false;
+        vm->cbs.complete = false;
 
         vm->s = IOVM1_STATE_EXECUTE_NEXT;
     }
@@ -147,42 +160,74 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
             return IOVM1_SUCCESS;
         }
 
-        vm->cbs.r = IOVM1_INST_REGISTER(x);
-        vm->cbs.a = vm->a[vm->cbs.r];
-        vm->cbs.t = vm->t[vm->cbs.r];
-        vm->cbs.p = vm->m.off;
-        vm->cbs.completed = false;
+        vm->cbs.c = IOVM1_INST_CHANNEL(x);
 
+        uint32_t b3 = 0;
+        uint32_t b2 = 0;
+        uint32_t b1 = 0;
+        uint32_t b0 = 0;
         switch (vm->cbs.o) {
-            case IOVM1_OPCODE_SETADDR: {
-                vm->t[vm->cbs.r] = vm->m.ptr[vm->m.off++];
-                uint32_t lo = (uint32_t)(vm->m.ptr[vm->m.off++]);
-                uint32_t hi = (uint32_t)(vm->m.ptr[vm->m.off++]) << 8;
-                uint32_t bk = (uint32_t)(vm->m.ptr[vm->m.off++]) << 16;
-                vm->a[vm->cbs.r] = bk | hi | lo;
+            case IOVM1_OPCODE_SETA8:
+                b0 = (uint32_t)(vm->m.ptr[vm->m.off++]);
+                vm->a[vm->cbs.c] = b0;
                 break;
-            }
+            case IOVM1_OPCODE_SETA16:
+                b0 = (uint32_t)(vm->m.ptr[vm->m.off++]);
+                b1 = (uint32_t)(vm->m.ptr[vm->m.off++]) << 8;
+                vm->a[vm->cbs.c] = b1 | b0;
+                break;
+            case IOVM1_OPCODE_SETA24:
+                b0 = (uint32_t)(vm->m.ptr[vm->m.off++]);
+                b1 = (uint32_t)(vm->m.ptr[vm->m.off++]) << 8;
+                b2 = (uint32_t)(vm->m.ptr[vm->m.off++]) << 16;
+                vm->a[vm->cbs.c] = b2 | b1 | b0;
+                break;
+            case IOVM1_OPCODE_SETTV:
+                vm->tv[vm->cbs.c] = vm->m.ptr[vm->m.off++];
+                break;
+            case IOVM1_OPCODE_SETLEN:
+                vm->len[vm->cbs.c] = vm->m.ptr[vm->m.off++];
+                if (vm->len[vm->cbs.c] == 0) {
+                    vm->len[vm->cbs.c] = 256;
+                }
+                break;
+            case IOVM1_OPCODE_SETCMPMSK:
+                vm->cmp[vm->cbs.c] = vm->m.ptr[vm->m.off++];
+                vm->msk[vm->cbs.c] = vm->m.ptr[vm->m.off++];
+                break;
+            case IOVM1_OPCODE_SETTIM:
+                b0 = (uint32_t)(vm->m.ptr[vm->m.off++]);
+                b1 = (uint32_t)(vm->m.ptr[vm->m.off++]) << 8;
+                b2 = (uint32_t)(vm->m.ptr[vm->m.off++]) << 16;
+                b3 = (uint32_t)(vm->m.ptr[vm->m.off++]) << 24;
+                vm->a[vm->cbs.c] = b3 | b2 | b1 | b0;
+                break;
+
             case IOVM1_OPCODE_READ:
-            case IOVM1_OPCODE_READ_N:
             case IOVM1_OPCODE_WRITE:
-            case IOVM1_OPCODE_WRITE_N: {
-                vm->cbs.len = vm->m.ptr[vm->m.off++];
-                if (vm->cbs.len == 0) { vm->cbs.len = 256; }
-
+            case IOVM1_OPCODE_WAIT_WHILE_NEQ:
+            case IOVM1_OPCODE_WAIT_WHILE_EQ:
+            case IOVM1_OPCODE_WAIT_WHILE_LT:
+            case IOVM1_OPCODE_WAIT_WHILE_GT:
+            case IOVM1_OPCODE_WAIT_WHILE_LTE:
+            case IOVM1_OPCODE_WAIT_WHILE_GTE: {
+                // all I/O ops defer to callback for implementation:
                 vm->cbs.p = vm->m.off;
+                vm->cbs.m = vm->m.ptr;
+                vm->cbs.t = vm->tv[vm->cbs.c] & 0x3F;
+                vm->cbs.v = (vm->tv[vm->cbs.c] & 0x80) != 0;
+                vm->cbs.a = vm->a[vm->cbs.c];
+                vm->cbs.len = vm->len[vm->cbs.c];
+                vm->cbs.tim = vm->tim[vm->cbs.c];
+                vm->cbs.cmp = vm->cmp[vm->cbs.c];
+                vm->cbs.msk = vm->msk[vm->cbs.c];
+                vm->cbs.initial = true;
+                vm->cbs.complete = false;
                 vm->s = IOVM1_STATE_RESUME_CALLBACK;
 
                 return IOVM1_SUCCESS;
             }
-            case IOVM1_OPCODE_WHILE_NEQ:
-            case IOVM1_OPCODE_WHILE_EQ: {
-                vm->cbs.c = vm->m.ptr[vm->m.off++];
 
-                vm->cbs.p = vm->m.off;
-                vm->s = IOVM1_STATE_RESUME_CALLBACK;
-
-                return IOVM1_SUCCESS;
-            }
             default:
                 // unknown opcode:
                 return IOVM1_ERROR_VM_UNKNOWN_OPCODE;

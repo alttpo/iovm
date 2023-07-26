@@ -41,12 +41,12 @@ registers:
 
     u16     len[0..3]:  transfer length register (0..256)
                         initial value = 0
+    u32     tim[0..3]:  timeout register in host-defined time units
+                        initial value = 0
     u8      cmp[0..3]:  comparison value register
                         initial value = 0
     u8      msk[0..3]:  comparison mask register
                         initial value = 255
-    u32     tim[0..3]:  timeout register in host-defined time units
-                        initial value = 0
 
 opcodes (o):
   0=END:                ends procedure
@@ -102,14 +102,15 @@ opcodes (o):
 
 
 cbs:                    callback state struct
-    bool    init;       // host sets this. true if initial callback invocation; false if subsequent callback
-    bool    completed;  // callback sets this. callback will be invoked until true
+    bool    initial;    // host sets this. true if initial callback invocation; false if subsequent callback
+    bool    complete;   // callback sets this. callback will be invoked until true
     u32     p;          // program memory address
+    u8      *m;         // program memory
     u8      o;          // opcode
     u8      c;          // channel
     u8      t;          // memory target identifier
     bool    v;          // auto-advance address
-    u32     a;          // memory target address
+    u32     a;          // 24-bit address into memory target
     u16     len;        // remaining transfer length
     u32     tim;        // remaining timeout
     u8      cmp;        // comparison value
@@ -122,27 +123,35 @@ cbs:                    callback state struct
 
 enum iovm1_opcode {
     IOVM1_OPCODE_END,
-    IOVM1_OPCODE_SETADDR,
+    IOVM1_OPCODE_SETA8,
+    IOVM1_OPCODE_SETA16,
+    IOVM1_OPCODE_SETA24,
+    IOVM1_OPCODE_SETTV,
+    IOVM1_OPCODE_SETLEN,
+    IOVM1_OPCODE_SETCMPMSK,
+    IOVM1_OPCODE_SETTIM,
     IOVM1_OPCODE_READ,
-    IOVM1_OPCODE_READ_N,
     IOVM1_OPCODE_WRITE,
-    IOVM1_OPCODE_WRITE_N,
-    IOVM1_OPCODE_WHILE_NEQ,
-    IOVM1_OPCODE_WHILE_EQ
+    IOVM1_OPCODE_WAIT_WHILE_NEQ,
+    IOVM1_OPCODE_WAIT_WHILE_EQ,
+    IOVM1_OPCODE_WAIT_WHILE_LT,
+    IOVM1_OPCODE_WAIT_WHILE_GT,
+    IOVM1_OPCODE_WAIT_WHILE_LTE,
+    IOVM1_OPCODE_WAIT_WHILE_GTE
 };
 
 typedef uint8_t iovm1_register;
 
-#define IOVM1_REGISTER_COUNT    (16)
+#define IOVM1_CHANNEL_COUNT     (4)
 
 #define IOVM1_INST_OPCODE(x)    ((enum iovm1_opcode) ((x)&15))
-#define IOVM1_INST_REGISTER(x)  ((iovm1_register) (((x)>>4)&15))
+#define IOVM1_INST_CHANNEL(x)   ((iovm1_register) (((x)>>4)&3))
 
 #define IOVM1_INST_END (0)
 
-#define IOVM1_MKINST(o, r) ( \
+#define IOVM1_MKINST(o, c) ( \
      ((uint8_t)(o)&15) | \
-    (((uint8_t)(r)&15)<<4) )
+    (((uint8_t)(c)&3)<<4) )
 
 typedef uint8_t iovm1_target;
 
@@ -171,19 +180,23 @@ struct bslice {
 struct iovm1_t;
 
 struct iovm1_callback_state_t {
-    struct iovm1_t      *vm;    // vm struct
+    bool                initial;    // ro. true only on initial callback; false otherwise
+    bool                complete;   // rw. callback will be invoked until true
 
-    enum iovm1_opcode   o;      // opcode
-    uint8_t             r;      // register number used for address
+    unsigned            p;          // rw. program memory address
+    const uint8_t       *m;         // ro. program memory
 
-    iovm1_target        t;      // 8-bit identifier of memory target
-    uint32_t            a;      // 24-bit address into memory target
+    enum iovm1_opcode   o;          // ro. opcode
+    uint8_t             c;          // ro. channel
 
-    unsigned            len;    // length remaining of read/write
-    uint8_t             c;      // comparison byte
-    unsigned            p;      // program memory address
+    iovm1_target        t;          // ro. memory target identifier
+    bool                v;          // ro. auto-advance address
+    uint32_t            a;          // rw. 24-bit address into memory target
 
-    bool completed;             // whether callback is complete
+    unsigned            len;        // rw. remaining transfer length
+    unsigned            tim;        // rw. remaining timeout
+    uint8_t             cmp;        // ro. comparison byte
+    uint8_t             msk;        // ro. comparison mask
 };
 
 #ifdef IOVM1_USE_CALLBACKS
@@ -208,8 +221,12 @@ struct iovm1_t {
     enum iovm1_state s;
 
     // registers:
-    uint32_t t[IOVM1_REGISTER_COUNT];   // target identifier
-    uint32_t a[IOVM1_REGISTER_COUNT];   // 24-bit address
+    uint32_t    a[IOVM1_CHANNEL_COUNT];     // 24-bit address
+    uint8_t     tv[IOVM1_CHANNEL_COUNT];    // target identifier
+    uint16_t    len[IOVM1_CHANNEL_COUNT];   // transfer length
+    uint32_t    tim[IOVM1_CHANNEL_COUNT];   // timeout
+    uint8_t     cmp[IOVM1_CHANNEL_COUNT];   // comparison byte
+    uint8_t     msk[IOVM1_CHANNEL_COUNT];   // comparison mask
 
     // state for callback resumption:
     struct iovm1_callback_state_t cbs;
@@ -228,10 +245,7 @@ struct iovm1_t {
 void iovm1_init(struct iovm1_t *vm);
 
 #ifdef IOVM1_USE_CALLBACKS
-enum iovm1_error iovm1_set_read_cb(struct iovm1_t *vm, iovm1_callback_f cb);
-enum iovm1_error iovm1_set_write_cb(struct iovm1_t *vm, iovm1_callback_f cb);
-enum iovm1_error iovm1_set_while_neq_cb(struct iovm1_t *vm, iovm1_callback_f cb);
-enum iovm1_error iovm1_set_while_eq_cb(struct iovm1_t *vm, iovm1_callback_f cb);
+enum iovm1_error iovm1_set_opcode_cb(struct iovm1_t *vm, iovm1_callback_f cb);
 #endif
 
 #ifdef IOVM1_USE_USERDATA
@@ -240,8 +254,6 @@ void *iovm1_get_userdata(struct iovm1_t *vm);
 #endif
 
 enum iovm1_error iovm1_load(struct iovm1_t *vm, const uint8_t *proc, unsigned len);
-
-enum iovm1_error iovm1_get_target_address(struct iovm1_t *vm, iovm1_target target, uint32_t *o_address);
 
 enum iovm1_error iovm1_exec_reset(struct iovm1_t *vm);
 
