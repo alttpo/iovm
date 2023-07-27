@@ -167,33 +167,30 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
 
         vm->cbs.c = IOVM1_INST_CHANNEL(x);
 
-        uint32_t b3 = 0;
-        uint32_t b2 = 0;
-        uint32_t b1 = 0;
-        uint32_t b0 = 0;
+        uint32_t b;
         switch (vm->cbs.o) {
             case IOVM1_OPCODE_SETA8:
-                b0 = (uint32_t)(vm->m.ptr[vm->m.off++]);
-                vm->a[vm->cbs.c] = b0;
+                b = (uint32_t)(vm->m.ptr[vm->m.off++]);
+                vm->a[vm->cbs.c] = b;
                 break;
             case IOVM1_OPCODE_SETA16:
-                b0 = (uint32_t)(vm->m.ptr[vm->m.off++]);
-                b1 = (uint32_t)(vm->m.ptr[vm->m.off++]) << 8;
-                vm->a[vm->cbs.c] = b1 | b0;
+                b = (uint32_t)(vm->m.ptr[vm->m.off++]);
+                b |= (uint32_t)(vm->m.ptr[vm->m.off++]) << 8;
+                vm->a[vm->cbs.c] = b;
                 break;
             case IOVM1_OPCODE_SETA24:
-                b0 = (uint32_t)(vm->m.ptr[vm->m.off++]);
-                b1 = (uint32_t)(vm->m.ptr[vm->m.off++]) << 8;
-                b2 = (uint32_t)(vm->m.ptr[vm->m.off++]) << 16;
-                vm->a[vm->cbs.c] = b2 | b1 | b0;
+                b = (uint32_t)(vm->m.ptr[vm->m.off++]);
+                b |= (uint32_t)(vm->m.ptr[vm->m.off++]) << 8;
+                b |= (uint32_t)(vm->m.ptr[vm->m.off++]) << 16;
+                vm->a[vm->cbs.c] = b;
                 break;
             case IOVM1_OPCODE_SETTV:
                 vm->tv[vm->cbs.c] = vm->m.ptr[vm->m.off++];
                 break;
             case IOVM1_OPCODE_SETLEN:
-                b0 = (uint32_t)(vm->m.ptr[vm->m.off++]);
-                b1 = (uint32_t)(vm->m.ptr[vm->m.off++]) << 8;
-                vm->len[vm->cbs.c] = b1 | b0;
+                b = (uint32_t)(vm->m.ptr[vm->m.off++]);
+                b |= (uint32_t)(vm->m.ptr[vm->m.off++]) << 8;
+                vm->len[vm->cbs.c] = b;
                 if (vm->len[vm->cbs.c] == 0) {
                     vm->len[vm->cbs.c] = 65536;
                 }
@@ -203,11 +200,11 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 vm->msk[vm->cbs.c] = vm->m.ptr[vm->m.off++];
                 break;
             case IOVM1_OPCODE_SETTIM:
-                b0 = (uint32_t)(vm->m.ptr[vm->m.off++]);
-                b1 = (uint32_t)(vm->m.ptr[vm->m.off++]) << 8;
-                b2 = (uint32_t)(vm->m.ptr[vm->m.off++]) << 16;
-                b3 = (uint32_t)(vm->m.ptr[vm->m.off++]) << 24;
-                vm->a[vm->cbs.c] = b3 | b2 | b1 | b0;
+                b = (uint32_t)(vm->m.ptr[vm->m.off++]);
+                b |= (uint32_t)(vm->m.ptr[vm->m.off++]) << 8;
+                b |= (uint32_t)(vm->m.ptr[vm->m.off++]) << 16;
+                b |= (uint32_t)(vm->m.ptr[vm->m.off++]) << 24;
+                vm->a[vm->cbs.c] = b;
                 break;
 
             case IOVM1_OPCODE_READ:
