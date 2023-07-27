@@ -11,7 +11,7 @@ void iovm1_init(struct iovm1_t *vm) {
 
     for (unsigned c = 0; c < IOVM1_CHANNEL_COUNT; c++) {
         vm->a[c] = 0;
-        vm->tv[c] = 0;
+        vm->tdu[c] = 0;
         vm->len[c] = 0;
         vm->tim[c] = 0;
         vm->cmp[c] = 0;
@@ -101,13 +101,13 @@ static enum iovm1_error iovm1_exec_callback(struct iovm1_t *vm) {
     if (vm->cbs.complete) {
         switch (vm->cbs.o) {
             case IOVM1_OPCODE_READ:
-                if ((vm->tv[vm->cbs.c] & 0x80) != 0) {
+                if ((vm->tdu[vm->cbs.c] & 0x80) != 0) {
                     // update register's address post-completion:
                     vm->a[vm->cbs.c] = vm->cbs.a;
                 }
                 break;
             case IOVM1_OPCODE_WRITE:
-                if ((vm->tv[vm->cbs.c] & 0x80) != 0) {
+                if ((vm->tdu[vm->cbs.c] & 0x80) != 0) {
                     // update register's address post-completion:
                     vm->a[vm->cbs.c] = vm->cbs.a;
                 }
@@ -145,6 +145,8 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
         vm->cbs.c = 0;
         vm->cbs.a = 0;
         vm->cbs.t = 0;
+        vm->cbs.d = false;
+        vm->cbs.u = false;
         vm->cbs.p = 0;
         vm->cbs.cmp = 0;
         vm->cbs.msk = 0xFF;
@@ -185,7 +187,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 vm->a[vm->cbs.c] = b;
                 break;
             case IOVM1_OPCODE_SETTV:
-                vm->tv[vm->cbs.c] = vm->m.ptr[vm->m.off++];
+                vm->tdu[vm->cbs.c] = vm->m.ptr[vm->m.off++];
                 break;
             case IOVM1_OPCODE_SETLEN:
                 b = (uint32_t)(vm->m.ptr[vm->m.off++]);
@@ -218,8 +220,9 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 // all I/O ops defer to callback for implementation:
                 vm->cbs.p = vm->m.off;
                 vm->cbs.m = vm->m.ptr;
-                vm->cbs.t = vm->tv[vm->cbs.c] & 0x3F;
-                vm->cbs.v = (vm->tv[vm->cbs.c] & 0x80) != 0;
+                vm->cbs.t = vm->tdu[vm->cbs.c] & 0x3F;
+                vm->cbs.d = (vm->tdu[vm->cbs.c] & 0x40) != 0;
+                vm->cbs.u = (vm->tdu[vm->cbs.c] & 0x80) != 0;
                 vm->cbs.a = vm->a[vm->cbs.c];
                 vm->cbs.len = vm->len[vm->cbs.c];
                 vm->cbs.tim = vm->tim[vm->cbs.c];

@@ -14,8 +14,8 @@ extern "C" {
 
 instructions:
 
-   76543210
-  [--ccoooo]
+   7654 3210
+  [--cc oooo]
 
     o = opcode  [0..15]
     c = channel [0..3]
@@ -30,13 +30,14 @@ registers:
     u24     a[0..3]:    24-bit memory target address register
                         initial value = 0
 
-    u8      tv[0..3]:   memory target and auto-advance register
+    u8      tdu[0..3]:  memory target, direction, update register
                         initial value = 0
 
                         [76543210]
-                         v-tttttt
+                         udtttttt
 
-                            v = auto-advance address on read/write by len
+                            u = update address register after read/write by len
+                            d = block transfer direction; 0 = [0 to len-1], 1 = [len-1 to 0]]
                             t = memory target (0..63)
 
     u32     len[0..3]:  transfer length register (1..65536)
@@ -66,8 +67,8 @@ opcodes (o):
         set b2 = m[p++] << 16
         set a[c] = b2 | b1 | b0
 
-  4=SETTV:              sets memory target and auto-advance bit of address register
-        set tv[c] = m[p++]
+  4=SETTDU:             sets memory target register
+        set tdu[c] = m[p++]
 
   5=SETLEN:             sets transfer length register
         set b0 = m[p++]
@@ -90,17 +91,17 @@ opcodes (o):
 
   9=WRITE:              I/O. writes bytes to memory target from next `len` bytes of program memory.
 
-  10=WAIT_WHILE_NEQ:    I/O. waits while (read_byte(tv[c], a[c]) & msk) != cmp or until `tim` expires.
+  10=WAIT_WHILE_NEQ:    I/O. waits while (read_byte(tdu[c], a[c]) & msk) != cmp or until `tim` expires.
 
-  11=WAIT_WHILE_EQ:     I/O. waits while (read_byte(tv[c], a[c]) & msk) == cmp or until `tim` expires.
+  11=WAIT_WHILE_EQ:     I/O. waits while (read_byte(tdu[c], a[c]) & msk) == cmp or until `tim` expires.
 
-  12=WAIT_WHILE_LT:     I/O. waits while (read_byte(tv[c], a[c]) & msk) < cmp or until `tim` expires.
+  12=WAIT_WHILE_LT:     I/O. waits while (read_byte(tdu[c], a[c]) & msk) < cmp or until `tim` expires.
 
-  13=WAIT_WHILE_GT:     I/O. waits while (read_byte(tv[c], a[c]) & msk) > cmp or until `tim` expires.
+  13=WAIT_WHILE_GT:     I/O. waits while (read_byte(tdu[c], a[c]) & msk) > cmp or until `tim` expires.
 
-  14=WAIT_WHILE_LTE:    I/O. waits while (read_byte(tv[c], a[c]) & msk) <= cmp or until `tim` expires.
+  14=WAIT_WHILE_LTE:    I/O. waits while (read_byte(tdu[c], a[c]) & msk) <= cmp or until `tim` expires.
 
-  15=WAIT_WHILE_GTE:    I/O. waits while (read_byte(tv[c], a[c]) & msk) >= cmp or until `tim` expires.
+  15=WAIT_WHILE_GTE:    I/O. waits while (read_byte(tdu[c], a[c]) & msk) >= cmp or until `tim` expires.
 
 
 cbs:                    callback state struct
@@ -197,7 +198,8 @@ struct iovm1_callback_state_t {
     uint8_t             c;          // ro. channel
 
     iovm1_target        t;          // ro. memory target identifier
-    bool                v;          // ro. auto-advance address
+    bool                d;          // ro. transfer direction (false = forward, true = reverse)
+    bool                u;          // ro. auto-advance address
     uint32_t            a;          // rw. 24-bit address into memory target
 
     uint32_t            len;        // rw. remaining transfer length
@@ -229,7 +231,7 @@ struct iovm1_t {
 
     // registers:
     uint32_t    a[IOVM1_CHANNEL_COUNT];     // 24-bit address
-    uint8_t     tv[IOVM1_CHANNEL_COUNT];    // target identifier
+    uint8_t     tdu[IOVM1_CHANNEL_COUNT];   // target identifier
     uint32_t    len[IOVM1_CHANNEL_COUNT];   // transfer length
     uint32_t    tim[IOVM1_CHANNEL_COUNT];   // timeout
     uint8_t     cmp[IOVM1_CHANNEL_COUNT];   // comparison byte
