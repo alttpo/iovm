@@ -90,40 +90,45 @@ enum iovm1_error iovm1_exec_reset(struct iovm1_t *vm) {
     return IOVM1_SUCCESS;
 }
 
+static enum iovm1_error iovm1_exec_callback(struct iovm1_t *vm) {
+    // continually invoke the callback function until it sets completed=true
+    IOVM1_INVOKE_CALLBACK(vm, &vm->cbs);
+
+    // clear initial run flag:
+    vm->cbs.initial = false;
+
+    // handle completion:
+    if (vm->cbs.complete) {
+        switch (vm->cbs.o) {
+            case IOVM1_OPCODE_READ:
+                if ((vm->tv[vm->cbs.c] & 0x80) != 0) {
+                    // update register's address post-completion:
+                    vm->a[vm->cbs.c] = vm->cbs.a;
+                }
+                break;
+            case IOVM1_OPCODE_WRITE:
+                if ((vm->tv[vm->cbs.c] & 0x80) != 0) {
+                    // update register's address post-completion:
+                    vm->a[vm->cbs.c] = vm->cbs.a;
+                }
+                // update program pointer after WRITE:
+                vm->m.off = vm->cbs.p;
+                break;
+            default:
+                break;
+        }
+
+        // move to next instruction:
+        vm->s = IOVM1_STATE_EXECUTE_NEXT;
+    }
+
+    return IOVM1_SUCCESS;
+}
+
 // executes the IOVM procedure instructions up to and including the next callback and then returns immediately after
 enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
     if (vm->s == IOVM1_STATE_RESUME_CALLBACK) {
-        // continually invoke the callback function until it sets completed=true
-        IOVM1_INVOKE_CALLBACK(vm, &vm->cbs);
-
-        // clear initial run flag:
-        vm->cbs.initial = false;
-
-        // handle completion:
-        if (vm->cbs.complete) {
-            switch (vm->cbs.o) {
-                case IOVM1_OPCODE_READ:
-                    if ((vm->tv[vm->cbs.c] & 0x80) != 0) {
-                        // update register's address post-completion:
-                        vm->a[vm->cbs.c] = vm->cbs.a;
-                    }
-                    break;
-                case IOVM1_OPCODE_WRITE:
-                    if ((vm->tv[vm->cbs.c] & 0x80) != 0) {
-                        // update register's address post-completion:
-                        vm->a[vm->cbs.c] = vm->cbs.a;
-                    }
-                    // update program pointer after WRITE:
-                    vm->m.off = vm->cbs.p;
-                    break;
-                default:
-                    break;
-            }
-
-            vm->s = IOVM1_STATE_EXECUTE_NEXT;
-        }
-
-        return IOVM1_SUCCESS;
+        return iovm1_exec_callback(vm);
     }
 
     if (vm->s < IOVM1_STATE_LOADED) {
@@ -227,7 +232,8 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 vm->cbs.complete = false;
                 vm->s = IOVM1_STATE_RESUME_CALLBACK;
 
-                return IOVM1_SUCCESS;
+                // execute the callback for at least the first iteration:
+                return iovm1_exec_callback(vm);
             }
 
             default:
