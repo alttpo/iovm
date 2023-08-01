@@ -197,6 +197,7 @@ struct iovm1_callback_state_t {
     enum iovm1_opcode   o;          // ro. opcode
     uint8_t             c;          // ro. channel
 
+    uint8_t             tdu;        // ro. copy of tdu register
     iovm1_target        t;          // ro. memory target identifier
     bool                d;          // ro. transfer direction (false = forward, true = reverse)
     bool                u;          // ro. auto-advance address

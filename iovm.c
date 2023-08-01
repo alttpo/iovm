@@ -144,6 +144,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
         vm->cbs.o = (enum iovm1_opcode) 0;
         vm->cbs.c = 0;
         vm->cbs.a = 0;
+        vm->cbs.tdu = 0;
         vm->cbs.t = 0;
         vm->cbs.d = false;
         vm->cbs.u = false;
@@ -220,6 +221,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 // all I/O ops defer to callback for implementation:
                 vm->cbs.p = vm->m.off;
                 vm->cbs.m = vm->m.ptr;
+                vm->cbs.tdu = vm->tdu[vm->cbs.c];
                 vm->cbs.t = vm->tdu[vm->cbs.c] & 0x3F;
                 vm->cbs.d = (vm->tdu[vm->cbs.c] & 0x40) != 0;
                 vm->cbs.u = (vm->tdu[vm->cbs.c] & 0x80) != 0;
