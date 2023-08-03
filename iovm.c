@@ -51,7 +51,7 @@ enum iovm1_error iovm1_set_opcode_cb(struct iovm1_t *vm, iovm1_callback_f cb) {
 
 enum iovm1_error iovm1_load(struct iovm1_t *vm, const uint8_t *proc, unsigned len) {
     if (vm->s != IOVM1_STATE_INIT) {
-        return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
+        return IOVM1_ERROR_INVALID_OPERATION_FOR_STATE;
     }
 
     // bounds checking:
@@ -80,10 +80,10 @@ void *iovm1_get_userdata(struct iovm1_t *vm) {
 
 enum iovm1_error iovm1_exec_reset(struct iovm1_t *vm) {
     if (vm->s < IOVM1_STATE_LOADED) {
-        return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
+        return IOVM1_ERROR_INVALID_OPERATION_FOR_STATE;
     }
     if (vm->s >= IOVM1_STATE_EXECUTE_NEXT && vm->s < IOVM1_STATE_ENDED) {
-        return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
+        return IOVM1_ERROR_INVALID_OPERATION_FOR_STATE;
     }
 
     vm->s = IOVM1_STATE_RESET;
@@ -93,6 +93,12 @@ enum iovm1_error iovm1_exec_reset(struct iovm1_t *vm) {
 static enum iovm1_error iovm1_exec_callback(struct iovm1_t *vm) {
     // continually invoke the callback function until it sets completed=true
     IOVM1_INVOKE_CALLBACK(vm, &vm->cbs);
+
+    // handle error result and terminate program:
+    if (vm->cbs.result != IOVM1_SUCCESS) {
+        vm->s = IOVM1_STATE_ERRORED;
+        return vm->cbs.result;
+    }
 
     // clear initial run flag:
     vm->cbs.initial = false;
@@ -127,14 +133,21 @@ static enum iovm1_error iovm1_exec_callback(struct iovm1_t *vm) {
 
 // executes the IOVM procedure instructions up to and including the next callback and then returns immediately after
 enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
+    if (vm->s >= IOVM1_STATE_ENDED) {
+        // return last result:
+        return vm->cbs.result;
+    }
+
     if (vm->s == IOVM1_STATE_RESUME_CALLBACK) {
+        // callback:
         return iovm1_exec_callback(vm);
     }
 
     if (vm->s < IOVM1_STATE_LOADED) {
         // must be VERIFIED before executing:
-        return IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE;
+        return IOVM1_ERROR_INVALID_OPERATION_FOR_STATE;
     }
+
     if (vm->s == IOVM1_STATE_LOADED) {
         vm->s = IOVM1_STATE_RESET;
     }
@@ -155,6 +168,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
         vm->cbs.tim = 0;
         vm->cbs.initial = false;
         vm->cbs.complete = false;
+        vm->cbs.result = IOVM1_SUCCESS;
 
         vm->s = IOVM1_STATE_EXECUTE_NEXT;
     }
@@ -165,6 +179,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
         vm->cbs.o = IOVM1_INST_OPCODE(x);
         if (vm->cbs.o == IOVM1_OPCODE_END) {
             vm->s = IOVM1_STATE_ENDED;
+            vm->cbs.result = IOVM1_SUCCESS;
             return IOVM1_SUCCESS;
         }
 
@@ -232,6 +247,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 vm->cbs.msk = vm->msk[vm->cbs.c];
                 vm->cbs.initial = true;
                 vm->cbs.complete = false;
+                vm->cbs.result = IOVM1_SUCCESS;
                 vm->s = IOVM1_STATE_RESUME_CALLBACK;
 
                 // execute the callback for at least the first iteration:
@@ -240,7 +256,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
 
             default:
                 // unknown opcode:
-                return IOVM1_ERROR_VM_UNKNOWN_OPCODE;
+                return IOVM1_ERROR_UNKNOWN_OPCODE;
         }
     }
 

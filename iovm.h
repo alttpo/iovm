@@ -164,19 +164,18 @@ enum iovm1_state {
     IOVM1_STATE_RESET,
     IOVM1_STATE_EXECUTE_NEXT,
     IOVM1_STATE_RESUME_CALLBACK,
-    IOVM1_STATE_ENDED
+    IOVM1_STATE_ENDED,
+    IOVM1_STATE_ERRORED
 };
 
 enum iovm1_error {
     IOVM1_SUCCESS = 0,
 
-    IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE,
-    IOVM1_ERROR_VM_UNKNOWN_OPCODE,
-    IOVM1_ERROR_VM_INVALID_MEMORY_ACCESS,
-
-    IOVM1_ERROR_OUT_OF_RANGE = 128,
-    IOVM1_ERROR_NO_DATA,
-    IOVM1_ERROR_BUFFER_TOO_SMALL,
+    IOVM1_ERROR_OUT_OF_RANGE,
+    IOVM1_ERROR_INVALID_OPERATION_FOR_STATE,
+    IOVM1_ERROR_UNKNOWN_OPCODE,
+    IOVM1_ERROR_INVALID_MEMORY_ACCESS,
+    IOVM1_ERROR_TIMED_OUT,
 };
 
 struct bslice {
@@ -190,6 +189,7 @@ struct iovm1_t;
 struct iovm1_callback_state_t {
     bool                initial;    // ro. true only on initial callback; false otherwise
     bool                complete;   // rw. callback will be invoked until true
+    enum iovm1_error    result;
 
     unsigned            p;          // rw. program memory address
     const uint8_t       *m;         // ro. program memory
