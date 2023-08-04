@@ -174,6 +174,13 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
     }
 
     while (vm->s == IOVM1_STATE_EXECUTE_NEXT) {
+        // end program when reached end of program buffer:
+        if (vm->m.off >= vm->m.len) {
+            vm->s = IOVM1_STATE_ENDED;
+            vm->cbs.result = IOVM1_SUCCESS;
+            return IOVM1_SUCCESS;
+        }
+
         uint8_t x = vm->m.ptr[vm->m.off++];
 
         vm->cbs.o = IOVM1_INST_OPCODE(x);
