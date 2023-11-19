@@ -6,117 +6,133 @@ extern "C" {
 #endif
 
 /*
-    iovm.h: trivial I/O virtual machine execution engine
+    iovm.h: low-latency embedded I/O virtual machine execution engine
 
-    features:
-        * max of 16 instruction opcodes
+    features / restrictions:
+        * max of 4 instruction opcodes
         * no branching instructions
+        * no state carried across instructions
 
-    host provides a callback function to implement read/write I/O tasks against memory targets. callbacks are
-    re-entrant.
-
-    the virtual machine consists of 16 registers which are 24-bit address into memory targets identified by an
-    8-bit unsigned integer. it is recommended to keep memory targets as linear address spaces.
-
-instructions:
-
-   7654 3210
-  [rrrr oooo]
-
-    o = opcode   [0..15]
-    r = register [0..15]
+    host MUST provide host_* named functions to implement the required memory controller interface.
 
 memory:
-    m[...]:         program memory, at least 1 byte
+    m[...]:             program memory, at least 1 byte
 
-registers:
-    u32 p:          points to current byte in m
-    u8  t[0..15]:   target identifier for each register
-    u24 a[0..15]:   target 24-bit address for each register
+    NOTE: entire program must be buffered into memory before execution starts
 
-cbs:                callback state struct
-    u8      o;          // opcode
-    u8      r;          // register
-    u8      t;          // target
-    u24     a;          // address
-    u32     len;        // length of read/write
-    u8      c;          // comparison byte
-    u32     p;          // program memory address
-    bool    completed;  // callback completed
+instruction byte format:
+
+   765432 10
+  [?????? oo]
+
+    o = opcode              [0..3]
+    ? = varies by opcode
 
 opcodes (o):
-  0=END:                ends procedure
+-----------------------
+  0=READ:               reads bytes from memory chip
+     765432 10
+    [------ 00]
 
-  1=SETADDR:            sets register to target and 24-bit address within
-        set t[r] = m[p++]
+        // memory chip identifier (0..255)
+        set c  = m[p++]
+        // memory address in 24-bit little-endian byte order:
         set lo = m[p++]
         set hi = m[p++] << 8
         set bk = m[p++] << 16
-        set a[r] = bk | hi | lo
+        set a  = bk | hi | lo
+        // length of read in bytes (treat 0 as 256, else 1..255)
+        set l  = translate_zero_byte(m[p++])
 
-  2=READ:               reads bytes from target; advance address after completed
-        set cbs.len = m[p++] // (translate 0 -> 256, else use 1..255)
-        set cbs.t = t[r]
-        set cbs.a = a[r]
-        set cbs.p = p
-        set cbs.completed = false
-        cb(vm, cbs)
-        if cbs.completed {
-            a[r] = cbs.a;
-        }
+        // initialize memory controller for chip and starting address:
+        host_memory_init(c, a);
+        // perform entire read:
+        while (l--)
+            host_send_byte(host_memory_read_auto_advance());
 
-  3=READ_N:             reads bytes from target; no advance address after completed
-        set cbs.len = m[p++] // (translate 0 -> 256, else use 1..255)
-        set cbs.t = t[r]
-        set cbs.a = a[r]
-        set cbs.p = p
-        set cbs.completed = false
-        cb(vm, cbs)
+ -----------------------
+  1=WRITE:              writes bytes to memory chip
+     765432 10
+    [------ 01]
 
-  4=WRITE:              writes bytes to target; advance address after completed
-        set cbs.len = m[p++] // (translate 0 -> 256, else use 1..255)
-        set cbs.t = t[r]
-        set cbs.a = a[r]
-        set cbs.p = p
-        set cbs.completed = false
-        cb(vm, cbs)
-        if cbs.completed {
-            a[r] = cbs.a;
-        }
+        // memory chip identifier (0..255)
+        set c  = m[p++]
+        // memory address in 24-bit little-endian byte order:
+        set lo = m[p++]
+        set hi = m[p++] << 8
+        set bk = m[p++] << 16
+        set a  = bk | hi | lo
+        // length of read in bytes (treat 0 as 256, else 1..255)
+        set l  = translate_zero_byte(m[p++])
 
-  5=WRITE_N:            writes bytes to target without advancing address after complete
-        set cbs.len = m[p++] // (translate 0 -> 256, else use 1..255)
-        set cbs.t = t[r]
-        set cbs.a = a[r]
-        set cbs.p = p
-        set cbs.completed = false
-        cb(vm, cbs);
+        // initialize memory controller for chip and starting address:
+        host_memory_init(c, a);
+        // perform entire write:
+        while (l--)
+            host_memory_write_auto_advance(m, &p);
 
-  6=WAIT_WHILE_NEQ:     waits while read_byte(t, a[t]) != m[p]
-        set cbs.c = m[p++]
-        set cbs.len = 0
-        set cbs.t = t[r]
-        set cbs.a = a[r]
-        set cbs.p = p
-        set cbs.completed = false
-        cb(vm, cbs);
+-----------------------
+  2=WAIT_UNTIL:         waits until a byte read from a memory chip compares to a value -- for read/write timing purposes
+     765 432 10
+    [--- qqq 10]
+        q = comparison operator [0..7]
+            0 =        EQ; equals
+            1 =       NEQ; not equals
+            2 =        LT; less than
+            3 =       NLT; not less than
+            4 =        GT; greater than
+            5 =       NGT; not greater than
+            6 = undefined; returns false
+            7 = undefined; returns false
 
-        // expected behavior:
-        //  while (read_byte(cbs.t, cbs.a) != cbs.c) {}
+        // memory chip identifier (0..255)
+        set c  = m[p++]
+        // memory address in 24-bit little-endian byte order:
+        set lo = m[p++]
+        set hi = m[p++] << 8
+        set bk = m[p++] << 16
+        set a  = bk | hi | lo
+        // comparison byte
+        set v  = m[p++]
+        // comparison mask
+        set k  = m[p++]
 
-  7=WAIT_WHILE_EQ:      waits while read_byte(t, a[t]) == m[p]
-        set cbs.c = m[p++]
-        set cbs.len = 0
-        set cbs.t = t[r]
-        set cbs.a = a[r]
-        set cbs.p = p
-        set cbs.completed = false
-        cb(vm, cbs);
+        // initialize memory controller for chip and starting address:
+        host_memory_init(c, a);
+        host_timer_reset();
+        // perform loop to wait until comparison byte matches value:
+        while ( !host_timer_elapsed() && !comparison_func[q](host_memory_read_no_advance() & k, v) ) {}
 
-        // expected behavior:
-        //  while (read_byte(cbs.t, cbs.a) == cbs.c) {}
+-----------------------
+  3=ABORT_IF:           reads a byte from a memory chip and compares to a value; if true, aborts program execution
+     765 432 10
+    [--- qqq 11]
+        q = comparison operator [0..7]
+            0 =        EQ; equals
+            1 =       NEQ; not equals
+            2 =        LT; less than
+            3 =       NLT; not less than
+            4 =        GT; greater than
+            5 =       NGT; not greater than
+            6 = undefined; returns false
+            7 = undefined; returns false
 
-  8..15:        reserved
+        // memory chip identifier (0..255)
+        set c  = m[p++]
+        // memory address in 24-bit little-endian byte order:
+        set lo = m[p++]
+        set hi = m[p++] << 8
+        set bk = m[p++] << 16
+        set a  = bk | hi | lo
+        // comparison byte
+        set v  = m[p++]
+        // comparison mask
+        set k  = m[p++]
+
+        // initialize memory controller for chip and starting address:
+        host_memory_init(c, a);
+        if ( comparison_func[q]((host_memory_read_no_advance() & k), v) )
+            abort();
 */
 
 #include <stdint.h>
