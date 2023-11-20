@@ -13,12 +13,13 @@ extern "C" {
         * no branching instructions
         * no state carried across instructions
 
-    host MUST provide host_* named functions to implement the required memory controller interface.
+    host MUST implement host_* named functions.
 
 memory:
     m[...]:             program memory, at least 1 byte
 
-    NOTE: entire program must be buffered into memory before execution starts
+    NOTE: entire program MUST be buffered into memory before execution starts to avoid timing delays between and
+    during instruction execution.
 
 instruction byte format:
 
@@ -35,20 +36,27 @@ opcodes (o):
     [------ 00]
 
         // memory chip identifier (0..255)
-        set c  = m[p++]
+        c  = m[p++]
         // memory address in 24-bit little-endian byte order:
-        set lo = m[p++]
-        set hi = m[p++] << 8
-        set bk = m[p++] << 16
-        set a  = bk | hi | lo
+        lo = m[p++]
+        hi = m[p++] << 8
+        bk = m[p++] << 16
+        a  = bk | hi | lo
         // length of read in bytes (treat 0 as 256, else 1..255)
-        set l  = translate_zero_byte(m[p++])
+        l_raw = m[p++]
+        l  = translate_zero_byte(lr)
 
-        // initialize memory controller for chip and starting address:
-        host_memory_init(c, a);
-        // perform entire read:
-        while (l--)
-            host_send_byte(host_memory_read_auto_advance());
+        {
+            uint8_t dm[256];
+            uint8_t *d = dm;
+            // initialize memory controller for chip and starting address:
+            host_memory_init(vm, c, a);
+            // perform entire read:
+            while (l--)
+                *d++ = host_memory_read_auto_advance(vm);
+            // send read data back to client:
+            host_send_read(vm, l_raw, d);
+        }
 
  -----------------------
   1=WRITE:              writes bytes to memory chip
@@ -56,20 +64,22 @@ opcodes (o):
     [------ 01]
 
         // memory chip identifier (0..255)
-        set c  = m[p++]
+        c  = m[p++]
         // memory address in 24-bit little-endian byte order:
-        set lo = m[p++]
-        set hi = m[p++] << 8
-        set bk = m[p++] << 16
-        set a  = bk | hi | lo
+        lo = m[p++]
+        hi = m[p++] << 8
+        bk = m[p++] << 16
+        a  = bk | hi | lo
         // length of read in bytes (treat 0 as 256, else 1..255)
-        set l  = translate_zero_byte(m[p++])
+        l  = translate_zero_byte(m[p++])
 
-        // initialize memory controller for chip and starting address:
-        host_memory_init(c, a);
-        // perform entire write:
-        while (l--)
-            host_memory_write_auto_advance(m, &p);
+        {
+            // initialize memory controller for chip and starting address:
+            host_memory_init(vm, c, a);
+            // perform entire write:
+            while (l--)
+                host_memory_write_auto_advance(vm, m[p++]);
+        }
 
 -----------------------
   2=WAIT_UNTIL:         waits until a byte read from a memory chip compares to a value -- for read/write timing purposes
@@ -86,22 +96,33 @@ opcodes (o):
             7 = undefined; returns false
 
         // memory chip identifier (0..255)
-        set c  = m[p++]
+        c  = m[p++]
         // memory address in 24-bit little-endian byte order:
-        set lo = m[p++]
-        set hi = m[p++] << 8
-        set bk = m[p++] << 16
-        set a  = bk | hi | lo
+        lo = m[p++]
+        hi = m[p++] << 8
+        bk = m[p++] << 16
+        a  = bk | hi | lo
         // comparison byte
-        set v  = m[p++]
+        v  = m[p++]
         // comparison mask
-        set k  = m[p++]
+        k  = m[p++]
 
-        // initialize memory controller for chip and starting address:
-        host_memory_init(c, a);
-        host_timer_reset();
-        // perform loop to wait until comparison byte matches value:
-        while ( !host_timer_elapsed() && !comparison_func[q](host_memory_read_no_advance() & k, v) ) {}
+        {
+            // initialize memory controller for chip and starting address:
+            host_memory_init(vm, c, a);
+            host_timer_reset(vm);
+
+            // perform loop to wait until comparison byte matches value:
+            while (!host_timer_elapsed(vm)) {
+                if (comparison_funcs[q](host_memory_read_no_advance(vm) & k, v)) {
+                    // successful exit:
+                    return;
+                }
+            }
+
+            // timed out; send an abort message back to the client:
+            host_send_abort(vm);
+        }
 
 -----------------------
   3=ABORT_IF:           reads a byte from a memory chip and compares to a value; if true, aborts program execution
@@ -118,66 +139,93 @@ opcodes (o):
             7 = undefined; returns false
 
         // memory chip identifier (0..255)
-        set c  = m[p++]
+        c  = m[p++]
         // memory address in 24-bit little-endian byte order:
-        set lo = m[p++]
-        set hi = m[p++] << 8
-        set bk = m[p++] << 16
-        set a  = bk | hi | lo
+        lo = m[p++]
+        hi = m[p++] << 8
+        bk = m[p++] << 16
+        a  = bk | hi | lo
         // comparison byte
-        set v  = m[p++]
+        v  = m[p++]
         // comparison mask
-        set k  = m[p++]
+        k  = m[p++]
 
-        // initialize memory controller for chip and starting address:
-        host_memory_init(c, a);
-        if ( comparison_func[q]((host_memory_read_no_advance() & k), v) )
-            abort();
+        {
+            // initialize memory controller for chip and starting address:
+            host_memory_init(vm, c, a);
+            // perform single byte read and compare:
+            if ( comparison_funcs[q]((host_memory_read_no_advance(vm) & k), v) ) {
+                // successful exit:
+                return;
+            }
+
+            // send an abort message to client:
+            host_send_abort(vm);
+        }
 */
 
 #include <stdint.h>
 #include <stdbool.h>
 
-enum iovm1_opcode {
-    IOVM1_OPCODE_END,
-    IOVM1_OPCODE_SETADDR,
+typedef uint32_t uint24_t;
+
+enum iovm1_opcode : uint8_t {
     IOVM1_OPCODE_READ,
-    IOVM1_OPCODE_READ_N,
     IOVM1_OPCODE_WRITE,
-    IOVM1_OPCODE_WRITE_N,
-    IOVM1_OPCODE_WHILE_NEQ,
-    IOVM1_OPCODE_WHILE_EQ
+    IOVM1_OPCODE_WAIT_UNTIL,
+    IOVM1_OPCODE_ABORT_IF
 };
 
-typedef uint8_t iovm1_register;
+enum iovm1_cmp_operator : uint8_t {
+    IOVM1_CMP_EQ,
+    IOVM1_CMP_NEQ,
+    IOVM1_CMP_LT,
+    IOVM1_CMP_NLT,
+    IOVM1_CMP_GT,
+    IOVM1_CMP_NGT
+};
 
-#define IOVM1_REGISTER_COUNT    (16)
+#define IOVM1_INST_OPCODE(x)        ((enum iovm1_opcode) ((x)&3))
+#define IOVM1_INST_CMP_OPERATOR(x)  ((enum iovm1_cmp_operator) (((x)>>2)&7))
 
-#define IOVM1_INST_OPCODE(x)    ((enum iovm1_opcode) ((x)&15))
-#define IOVM1_INST_REGISTER(x)  ((iovm1_register) (((x)>>4)&15))
+#define IOVM1_MK_WAIT_UNTIL(q) (  \
+        IOVM1_OPCODE_WAIT_UNTIL | \
+        ((q)&7)<<2                \
+    )
 
-#define IOVM1_INST_END (0)
+#define IOVM1_MK_ABORT_IF(q) (  \
+        IOVM1_OPCODE_ABORT_IF | \
+        ((q)&7)<<2              \
+    )
 
-#define IOVM1_MKINST(o, r) ( \
-     ((uint8_t)(o)&15) | \
-    (((uint8_t)(r)&15)<<4) )
+typedef uint8_t iovm1_memory_chip_t;
 
-typedef uint8_t iovm1_target;
+enum iovm1_rdwr {
+    IOVM1_READ,
+    IOVM1_WRITE,
+};
 
 enum iovm1_state {
     IOVM1_STATE_INIT,
     IOVM1_STATE_LOADED,
     IOVM1_STATE_RESET,
     IOVM1_STATE_EXECUTE_NEXT,
-    IOVM1_STATE_RESUME_CALLBACK,
-    IOVM1_STATE_ENDED
+    IOVM1_STATE_ENDED,
+    // any state after IOVM1_STATE_ENDED is considered errored:
+    IOVM1_STATE_ERRORED,
 };
 
 enum iovm1_error {
     IOVM1_SUCCESS,
     IOVM1_ERROR_OUT_OF_RANGE,
-    IOVM1_ERROR_VM_INVALID_OPERATION_FOR_STATE,
-    IOVM1_ERROR_VM_UNKNOWN_OPCODE,
+    IOVM1_ERROR_INVALID_OPERATION_FOR_STATE,
+    IOVM1_ERROR_UNKNOWN_OPCODE,
+    IOVM1_ERROR_TIMED_OUT,
+    IOVM1_ERROR_ABORTED,
+    IOVM1_ERROR_MEMORY_CHIP_UNDEFINED,
+    IOVM1_ERROR_MEMORY_CHIP_ADDRESS_OUT_OF_RANGE,
+    IOVM1_ERROR_MEMORY_CHIP_NOT_READABLE,
+    IOVM1_ERROR_MEMORY_CHIP_NOT_WRITABLE,
 };
 
 struct bslice {
@@ -188,33 +236,22 @@ struct bslice {
 
 struct iovm1_t;
 
-struct iovm1_callback_state_t {
-    struct iovm1_t      *vm;    // vm struct
+// host interface:
 
-    enum iovm1_opcode   o;      // opcode
-    uint8_t             r;      // register number used for address
+extern void host_send_abort(struct iovm1_t *vm);
+extern void host_send_read(struct iovm1_t *vm, uint8_t l, uint8_t *d);
+extern void host_send_end(struct iovm1_t *vm);
 
-    iovm1_target        t;      // 8-bit identifier of memory target
-    uint32_t            a;      // 24-bit address into memory target
+extern void host_timer_reset(struct iovm1_t *vm);
+extern bool host_timer_elapsed(struct iovm1_t *vm);
 
-    unsigned            len;    // length remaining of read/write
-    uint8_t             c;      // comparison byte
-    unsigned            p;      // program memory address
+extern enum iovm1_error host_memory_init(struct iovm1_t *vm, iovm1_memory_chip_t c, uint24_t a);
+extern enum iovm1_error host_memory_read_validate(struct iovm1_t *vm, int l);
+extern enum iovm1_error host_memory_write_validate(struct iovm1_t *vm, int l);
 
-    bool completed;             // whether callback is complete
-};
-
-#ifdef IOVM1_USE_CALLBACKS
-// callback typedef:
-
-typedef void (*iovm1_callback_f)(struct iovm1_t *vm, struct iovm1_callback_state_t *cbs);
-#else
-// required function implementations by user:
-
-// handle all opcode callbacks (switch on cbs->o):
-void iovm1_opcode_cb(struct iovm1_t *vm, struct iovm1_callback_state_t *cbs);
-
-#endif
+extern uint8_t host_memory_read_auto_advance(struct iovm1_t *vm);
+extern uint8_t host_memory_read_no_advance(struct iovm1_t *vm);
+extern void host_memory_write_auto_advance(struct iovm1_t *vm, uint8_t b);
 
 // iovm1_t definition:
 
@@ -224,33 +261,19 @@ struct iovm1_t {
 
     // current state
     enum iovm1_state s;
-
-    // registers:
-    uint32_t t[IOVM1_REGISTER_COUNT];   // target identifier
-    uint32_t a[IOVM1_REGISTER_COUNT];   // 24-bit address
-
-    // state for callback resumption:
-    struct iovm1_callback_state_t cbs;
+    enum iovm1_error e;
 
 #ifdef IOVM1_USE_USERDATA
     void *userdata;
 #endif
 
-#ifdef IOVM1_USE_CALLBACKS
-    iovm1_callback_f        opcode_cb;
-#endif
+    // offset of current executing opcode:
+    uint32_t p;
 };
 
 // core functions:
 
 void iovm1_init(struct iovm1_t *vm);
-
-#ifdef IOVM1_USE_CALLBACKS
-enum iovm1_error iovm1_set_read_cb(struct iovm1_t *vm, iovm1_callback_f cb);
-enum iovm1_error iovm1_set_write_cb(struct iovm1_t *vm, iovm1_callback_f cb);
-enum iovm1_error iovm1_set_while_neq_cb(struct iovm1_t *vm, iovm1_callback_f cb);
-enum iovm1_error iovm1_set_while_eq_cb(struct iovm1_t *vm, iovm1_callback_f cb);
-#endif
 
 #ifdef IOVM1_USE_USERDATA
 void iovm1_set_userdata(struct iovm1_t *vm, void *userdata);
@@ -258,8 +281,6 @@ void *iovm1_get_userdata(struct iovm1_t *vm);
 #endif
 
 enum iovm1_error iovm1_load(struct iovm1_t *vm, const uint8_t *proc, unsigned len);
-
-enum iovm1_error iovm1_get_target_address(struct iovm1_t *vm, iovm1_target target, uint32_t *o_address);
 
 enum iovm1_error iovm1_exec_reset(struct iovm1_t *vm);
 
