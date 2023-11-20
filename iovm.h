@@ -205,6 +205,9 @@ enum iovm1_state {
     IOVM1_STATE_LOADED,
     IOVM1_STATE_RESET,
     IOVM1_STATE_EXECUTE_NEXT,
+    IOVM1_STATE_READ,
+    IOVM1_STATE_WRITE,
+    IOVM1_STATE_WAIT,
     IOVM1_STATE_ENDED,
     // any state after IOVM1_STATE_ENDED is considered errored:
     IOVM1_STATE_ERRORED,
@@ -264,6 +267,31 @@ struct iovm1_t {
 
     // offset of current executing opcode:
     uint32_t p;
+
+    // instruction state:
+    union {
+        struct {
+            iovm1_memory_chip_t c;
+            uint24_t a;
+            uint8_t l_raw;
+            int l;
+            uint8_t dm[256];
+            uint8_t *d;
+        } rd;
+        struct {
+            iovm1_memory_chip_t c;
+            uint24_t a;
+            uint8_t l_raw;
+            int l;
+        } wr;
+        struct {
+            iovm1_memory_chip_t c;
+            uint24_t a;
+            uint8_t v;
+            uint8_t k;
+            enum iovm1_cmp_operator q;
+        } wa;
+    };
 };
 
 // core functions:
