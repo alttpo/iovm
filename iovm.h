@@ -200,11 +200,6 @@ enum iovm1_cmp_operator : uint8_t {
 
 typedef uint8_t iovm1_memory_chip_t;
 
-enum iovm1_rdwr {
-    IOVM1_READ,
-    IOVM1_WRITE,
-};
-
 enum iovm1_state {
     IOVM1_STATE_INIT,
     IOVM1_STATE_LOADED,
