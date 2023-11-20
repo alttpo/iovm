@@ -94,10 +94,14 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
     if (vm->s == IOVM1_STATE_RESET) {
         // reset execution state:
         vm->m.off = 0;
+        vm->p = 0;
+        vm->e = IOVM1_SUCCESS;
         vm->s = IOVM1_STATE_EXECUTE_NEXT;
     }
 
     while (vm->s == IOVM1_STATE_EXECUTE_NEXT) {
+        vm->p = vm->m.off;
+
         if (vm->m.off >= vm->m.len) {
             vm->s = IOVM1_STATE_ENDED;
             vm->e = IOVM1_SUCCESS;
@@ -106,8 +110,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
         }
 
         // read instruction byte:
-        vm->p = vm->m.off++;
-        uint8_t x = vm->m.ptr[vm->p];
+        uint8_t x = vm->m.ptr[vm->m.off++];
 
         // instruction opcode:
         uint8_t o = IOVM1_INST_OPCODE(x);
@@ -144,7 +147,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 }
 
                 // send read data back to client:
-                host_send_read(vm, l_raw, d);
+                host_send_read(vm, l_raw, dm);
 
                 vm->e = IOVM1_SUCCESS;
                 return vm->e;
