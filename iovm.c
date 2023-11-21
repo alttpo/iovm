@@ -85,10 +85,16 @@ static comparison_func_t comparison_funcs[8] = {
 enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
     // first check here to handle read/write/wait instructions -- for lower latency between loop iterations:
     switch (vm->s) {
+        case IOVM1_STATE_ERRORED:
+            // maintain errored state until explicit reset:
+            return vm->e;
         case IOVM1_STATE_READ:
         do_read:
             if (vm->rd.l-- > 0) {
                 *vm->rd.d++ = host_memory_read_auto_advance(vm);
+                // returning here ensures caller remains in control of execution. this avoids a series of single-byte
+                // read commands that will execute back-to-back in a single invocation of iovm1_exec(), never returning
+                // control back to caller until the series of commands is complete.
                 vm->e = IOVM1_SUCCESS;
                 return vm->e;
             }
@@ -102,6 +108,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
         do_write:
             if (vm->wr.l-- > 0) {
                 host_memory_write_auto_advance(vm, vm->m.ptr[vm->m.off++]);
+                // returning here ensures caller remains in control of execution.
                 vm->e = IOVM1_SUCCESS;
                 return vm->e;
             }
@@ -177,6 +184,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 vm->rd.a = bk | hi | lo;
                 // length of read in bytes:
                 vm->rd.l_raw = vm->m.ptr[vm->m.off++];
+                // translate 0 -> 256:
                 vm->rd.l = vm->rd.l_raw;
                 if (vm->rd.l == 0) { vm->rd.l = 256; }
 
@@ -206,6 +214,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
 
                 // length of read in bytes:
                 vm->wr.l_raw = vm->m.ptr[vm->m.off++];
+                // translate 0 -> 256:
                 vm->wr.l = vm->wr.l_raw;
                 if (vm->wr.l == 0) { vm->wr.l = 256; }
 
@@ -247,7 +256,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                     return vm->e;
                 }
 
-                // perform loop to wait until comparison byte matches value:
+                // perform loop to wait until (comparison byte & mask) successfully compares to value:
                 host_timer_reset(vm);
                 vm->s = IOVM1_STATE_WAIT;
                 goto do_wait;
