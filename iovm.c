@@ -122,6 +122,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 // timed out; send an abort message back to the client:
                 vm->s = IOVM1_STATE_ERRORED;
                 vm->e = IOVM1_ERROR_TIMED_OUT;
+                host_timer_cleanup(vm);
                 host_send_abort(vm);
 
                 return vm->e;
@@ -137,6 +138,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
             // wait complete; start next instruction:
             vm->s = IOVM1_STATE_EXECUTE_NEXT;
             vm->e = IOVM1_SUCCESS;
+            host_timer_cleanup(vm);
             break;
         default:
             // on first execution, state machine lands here:

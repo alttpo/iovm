@@ -169,14 +169,14 @@ opcodes (o):
 
 typedef uint32_t uint24_t;
 
-enum iovm1_opcode : uint8_t {
+enum iovm1_opcode {
     IOVM1_OPCODE_READ,
     IOVM1_OPCODE_WRITE,
     IOVM1_OPCODE_WAIT_UNTIL,
     IOVM1_OPCODE_ABORT_IF
 };
 
-enum iovm1_cmp_operator : uint8_t {
+enum iovm1_cmp_operator {
     IOVM1_CMP_EQ,
     IOVM1_CMP_NEQ,
     IOVM1_CMP_LT,
@@ -198,7 +198,18 @@ enum iovm1_cmp_operator : uint8_t {
         ((q)&7)<<2              \
     )
 
-typedef uint8_t iovm1_memory_chip_t;
+enum iovm1_memory_chip {
+    MEM_SNES_WRAM,
+    MEM_SNES_VRAM,
+    MEM_SNES_CGRAM,
+    MEM_SNES_OAM,
+    MEM_SNES_ARAM,
+    MEM_SNES_2C00,
+    MEM_SNES_ROM,
+    MEM_SNES_SRAM,
+};
+
+typedef enum iovm1_memory_chip iovm1_memory_chip_t;
 
 enum iovm1_state {
     IOVM1_STATE_INIT,
@@ -250,17 +261,19 @@ extern uint8_t host_memory_read_no_advance(struct iovm1_t *vm);
 // write a byte and advance the chip address forward by 1 byte
 extern void host_memory_write_auto_advance(struct iovm1_t *vm, uint8_t b);
 
+// send a program-end message to the client
+extern void host_send_end(struct iovm1_t *vm);
 // send an abort message to the client
 extern void host_send_abort(struct iovm1_t *vm);
 // send a read-complete message to the client with the fully read data up to 256 bytes in length
 extern void host_send_read(struct iovm1_t *vm, uint8_t l, uint8_t *d);
-// send a program-end message to the client
-extern void host_send_end(struct iovm1_t *vm);
 
 // initialize a host-side countdown timer to a timeout value for WAIT operation, e.g. duration of a single video frame
 extern void host_timer_reset(struct iovm1_t *vm);
 // checks if the host-side countdown timer has elapsed down to or below 0
 extern bool host_timer_elapsed(struct iovm1_t *vm);
+// stops the host-side countdown timer and releases any resources
+extern void host_timer_cleanup(struct iovm1_t *vm);
 
 // iovm1_t definition:
 
