@@ -192,12 +192,8 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
 
                 vm->rd.d = vm->rd.dm;
 
-                // initialize memory controller for chip and starting address:
-                if ((vm->e = host_memory_init(vm, vm->rd.c, vm->rd.a)) != IOVM1_SUCCESS) {
-                    return vm->e;
-                }
-                // validate read:
-                if ((vm->e = host_memory_read_validate(vm, vm->rd.l)) != IOVM1_SUCCESS) {
+                // initialize memory controller for reading from chip at address:
+                if ((vm->e = host_memory_start_read(vm, vm->rd.c, vm->rd.a, vm->rd.l)) != IOVM1_SUCCESS) {
                     return vm->e;
                 }
 
@@ -220,12 +216,8 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 vm->wr.l = vm->wr.l_raw;
                 if (vm->wr.l == 0) { vm->wr.l = 256; }
 
-                // initialize memory controller for chip and starting address:
-                if ((vm->e = host_memory_init(vm, vm->wr.c, vm->wr.a)) != IOVM1_SUCCESS) {
-                    return vm->e;
-                }
-                // validate write:
-                if ((vm->e = host_memory_write_validate(vm, vm->wr.l)) != IOVM1_SUCCESS) {
+                // initialize memory controller for writing to chip at address:
+                if ((vm->e = host_memory_start_write(vm, vm->wr.c, vm->wr.a, vm->wr.l)) != IOVM1_SUCCESS) {
                     return vm->e;
                 }
 
@@ -249,12 +241,8 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 // comparison mask
                 vm->wa.k  = vm->m.ptr[vm->m.off++];
 
-                // initialize memory controller for chip and starting address:
-                if ((vm->e = host_memory_init(vm, vm->wa.c, vm->wa.a)) != IOVM1_SUCCESS) {
-                    return vm->e;
-                }
-                // validate read:
-                if ((vm->e = host_memory_read_validate(vm, 1)) != IOVM1_SUCCESS) {
+                // initialize memory controller for reading from chip at address:
+                if ((vm->e = host_memory_start_read(vm, vm->wa.c, vm->wa.a, 1)) != IOVM1_SUCCESS) {
                     return vm->e;
                 }
 
@@ -279,12 +267,8 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 // comparison mask
                 uint8_t k  = vm->m.ptr[vm->m.off++];
 
-                // initialize memory controller for chip and starting address:
-                if ((vm->e = host_memory_init(vm, c, a)) != IOVM1_SUCCESS) {
-                    return vm->e;
-                }
-                // validate read:
-                if ((vm->e = host_memory_read_validate(vm, 1)) != IOVM1_SUCCESS) {
+                // initialize memory controller for reading chip at address:
+                if ((vm->e = host_memory_start_read(vm, c, a, 1)) != IOVM1_SUCCESS) {
                     return vm->e;
                 }
 

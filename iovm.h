@@ -247,12 +247,10 @@ struct iovm1_t;
 
 // host interface:
 
-// initialize memory controller to point at specific memory chip and a starting address within it
-extern enum iovm1_error host_memory_init(struct iovm1_t *vm, iovm1_memory_chip_t c, uint24_t a);
-// validate the addresses of a read operation with the given length against the last host_memory_init() call
-extern enum iovm1_error host_memory_read_validate(struct iovm1_t *vm, int l);
-// validate the addresses of a write operation with the given length against the last host_memory_init() call
-extern enum iovm1_error host_memory_write_validate(struct iovm1_t *vm, int l);
+// initialize memory controller for a read operation with the given length
+extern enum iovm1_error host_memory_start_read(struct iovm1_t *vm, iovm1_memory_chip_t c, uint24_t a, int l);
+// initialize memory controller for a write operation with the given length
+extern enum iovm1_error host_memory_start_write(struct iovm1_t *vm, iovm1_memory_chip_t c, uint24_t a, int l);
 
 // read a byte and advance the chip address forward by 1 byte
 extern uint8_t host_memory_read_auto_advance(struct iovm1_t *vm);
@@ -294,6 +292,7 @@ struct iovm1_t {
 
     // instruction state:
     union {
+        // read
         struct {
             iovm1_memory_chip_t c;
             uint24_t a;
@@ -302,12 +301,14 @@ struct iovm1_t {
             uint8_t *d;
             uint8_t dm[256];
         } rd;
+        // write
         struct {
             iovm1_memory_chip_t c;
             uint24_t a;
             uint8_t l_raw;
             int l;
         } wr;
+        // wait
         struct {
             iovm1_memory_chip_t c;
             uint24_t a;

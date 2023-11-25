@@ -45,11 +45,11 @@ enum iovm1_error host_memory_init(struct iovm1_t *vm, iovm1_memory_chip_t c, uin
     return IOVM1_SUCCESS;
 }
 // validate the addresses of a read operation with the given length against the last host_memory_init() call
-enum iovm1_error host_memory_read_validate(struct iovm1_t *vm, int l) {
+enum iovm1_error host_memory_start_read(struct iovm1_t *vm, int l) {
     return IOVM1_SUCCESS;
 }
 // validate the addresses of a write operation with the given length against the last host_memory_init() call
-enum iovm1_error host_memory_write_validate(struct iovm1_t *vm, int l) {
+enum iovm1_error host_memory_start_write(struct iovm1_t *vm, int l) {
     return IOVM1_SUCCESS;
 }
 
