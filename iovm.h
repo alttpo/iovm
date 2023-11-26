@@ -237,6 +237,12 @@ enum iovm1_error {
     IOVM1_ERROR_MEMORY_CHIP_NOT_WRITABLE,
 };
 
+enum iovm1_opstate {
+    IOVM1_OPSTATE_INIT,
+    IOVM1_OPSTATE_CONTINUE,
+    IOVM1_OPSTATE_COMPLETED,
+};
+
 struct bslice {
     const uint8_t *ptr;
     uint32_t len;
@@ -247,31 +253,18 @@ struct iovm1_t;
 
 // host interface:
 
-// initialize memory controller for a read operation with the given length
-extern enum iovm1_error host_memory_start_read(struct iovm1_t *vm, iovm1_memory_chip_t c, uint24_t a, int l);
-// initialize memory controller for a write operation with the given length
-extern enum iovm1_error host_memory_start_write(struct iovm1_t *vm, iovm1_memory_chip_t c, uint24_t a, int l);
+// advance memory-read state machine, use `vm->rd` for tracking state
+extern enum iovm1_error host_memory_read_state_machine(struct iovm1_t *vm);
+// advance memory-write state machine, use `vm->wr` for tracking state
+extern enum iovm1_error host_memory_write_state_machine(struct iovm1_t *vm);
+// advance memory-wait state machine, use `vm->wa` for tracking state, use `iovm1_memory_wait_test_byte` for comparison func
+extern enum iovm1_error host_memory_wait_state_machine(struct iovm1_t *vm);
 
-// read a byte and advance the chip address forward by 1 byte
-extern uint8_t host_memory_read_auto_advance(struct iovm1_t *vm);
-// read a byte and do not advance the chip address; useful for continuously polling a specific address
-extern uint8_t host_memory_read_no_advance(struct iovm1_t *vm);
-// write a byte and advance the chip address forward by 1 byte
-extern void host_memory_write_auto_advance(struct iovm1_t *vm, uint8_t b);
+// try to read a byte from a memory chip, return byte in `*b` if successful
+extern enum iovm1_error host_memory_try_read_byte(struct iovm1_t *vm, iovm1_memory_chip_t c, uint24_t a, uint8_t *b);
 
 // send a program-end message to the client
 extern void host_send_end(struct iovm1_t *vm);
-// send an abort message to the client
-extern void host_send_abort(struct iovm1_t *vm);
-// send a read-complete message to the client with the fully read data up to 256 bytes in length
-extern void host_send_read(struct iovm1_t *vm, uint8_t l, uint8_t *d);
-
-// initialize a host-side countdown timer to a timeout value for WAIT operation, e.g. duration of a single video frame
-extern void host_timer_reset(struct iovm1_t *vm);
-// checks if the host-side countdown timer has elapsed down to or below 0
-extern bool host_timer_elapsed(struct iovm1_t *vm);
-// stops the host-side countdown timer and releases any resources
-extern void host_timer_cleanup(struct iovm1_t *vm);
 
 // iovm1_t definition:
 
@@ -290,26 +283,32 @@ struct iovm1_t {
     // offset of current executing opcode:
     uint32_t p;
 
+    // offset of next opcode:
+    uint32_t next_off;
+
     // instruction state:
     union {
         // read
         struct {
+            enum iovm1_opstate os;
             iovm1_memory_chip_t c;
             uint24_t a;
             uint8_t l_raw;
             int l;
-            uint8_t *d;
-            uint8_t dm[256];
         } rd;
         // write
         struct {
+            enum iovm1_opstate os;
             iovm1_memory_chip_t c;
             uint24_t a;
             uint8_t l_raw;
             int l;
+            // offset into vm->m.ptr to source data from
+            uint32_t p;
         } wr;
         // wait
         struct {
+            enum iovm1_opstate os;
             iovm1_memory_chip_t c;
             uint24_t a;
             uint8_t v;
@@ -337,6 +336,23 @@ static inline enum iovm1_state iovm1_get_exec_state(struct iovm1_t *vm) {
 }
 
 enum iovm1_error iovm1_exec(struct iovm1_t *vm);
+
+static inline bool iovm1_memory_cmp(enum iovm1_cmp_operator q, uint8_t a, uint8_t b) {
+    switch (q) {
+        case IOVM1_CMP_EQ: return a == b;
+        case IOVM1_CMP_NEQ: return a != b;
+        case IOVM1_CMP_LT: return a < b;
+        case IOVM1_CMP_NLT: return a >= b;
+        case IOVM1_CMP_GT: return a > b;
+        case IOVM1_CMP_NGT: return a <= b;
+        default: return false;
+    }
+}
+
+// tests the read byte `b` with the current wait operation's comparison function and bit mask
+static inline bool iovm1_memory_wait_test_byte(struct iovm1_t *vm, uint8_t a) {
+    return iovm1_memory_cmp(vm->wa.q & 7, a & vm->wa.k, vm->wa.v);
+}
 
 #ifdef __cplusplus
 }

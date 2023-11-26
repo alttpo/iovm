@@ -16,6 +16,7 @@ void iovm1_init(struct iovm1_t *vm) {
     vm->m.ptr = 0;
     vm->m.len = 0;
     vm->m.off = 0;
+    vm->next_off = 0;
 }
 
 enum iovm1_error iovm1_load(struct iovm1_t *vm, const uint8_t *proc, unsigned len) {
@@ -31,6 +32,7 @@ enum iovm1_error iovm1_load(struct iovm1_t *vm, const uint8_t *proc, unsigned le
     vm->m.ptr = proc;
     vm->m.len = len;
     vm->m.off = 0;
+    vm->next_off = 0;
 
     vm->s = IOVM1_STATE_LOADED;
 
@@ -59,27 +61,7 @@ enum iovm1_error iovm1_exec_reset(struct iovm1_t *vm) {
     return IOVM1_SUCCESS;
 }
 
-typedef bool (*comparison_func_t)(uint8_t a, uint8_t b);
-
-static bool cmp_eq   (uint8_t a, uint8_t b) { return a == b; }
-static bool cmp_neq  (uint8_t a, uint8_t b) { return a != b; }
-static bool cmp_lt   (uint8_t a, uint8_t b) { return a < b; }
-static bool cmp_nlt  (uint8_t a, uint8_t b) { return a >= b; }
-static bool cmp_gt   (uint8_t a, uint8_t b) { return a > b; }
-static bool cmp_ngt  (uint8_t a, uint8_t b) { return a <= b; }
-static bool cmp_false(uint8_t a, uint8_t b) { return false; }
-
-static comparison_func_t comparison_funcs[8] = {
-    cmp_eq,
-    cmp_neq,
-    cmp_lt,
-    cmp_nlt,
-    cmp_gt,
-    cmp_ngt,
-    // undefined:
-    cmp_false,
-    cmp_false
-};
+enum iovm1_error host_memory_try_read_byte(struct iovm1_t *vn, iovm1_memory_chip_t c, uint24_t a, uint8_t *b);
 
 // executes the next IOVM instruction
 enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
@@ -88,58 +70,66 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
         case IOVM1_STATE_ERRORED:
             // maintain errored state until explicit reset:
             return vm->e;
-        case IOVM1_STATE_READ:
+        case IOVM1_STATE_READ: {
         do_read:
-            if (vm->rd.l-- > 0) {
-                *vm->rd.d++ = host_memory_read_auto_advance(vm);
-                // returning here ensures caller remains in control of execution. this avoids a series of single-byte
-                // read commands that will execute back-to-back in a single invocation of iovm1_exec(), never returning
-                // control back to caller until the series of commands is complete.
-                vm->e = IOVM1_SUCCESS;
-                return vm->e;
-            }
-
-            // read complete; send read data back to client:
-            host_send_read(vm, vm->rd.l_raw, vm->rd.dm);
-            // start next instruction:
-            vm->s = IOVM1_STATE_EXECUTE_NEXT;
-            break;
-        case IOVM1_STATE_WRITE:
-        do_write:
-            if (vm->wr.l-- > 0) {
-                host_memory_write_auto_advance(vm, vm->m.ptr[vm->m.off++]);
-                // returning here ensures caller remains in control of execution.
-                vm->e = IOVM1_SUCCESS;
-                return vm->e;
-            }
-
-            // write complete; start next instruction:
-            vm->s = IOVM1_STATE_EXECUTE_NEXT;
-            break;
-        case IOVM1_STATE_WAIT:
-        do_wait:
-            if (host_timer_elapsed(vm)) {
-                // timed out; send an abort message back to the client:
+            vm->e = host_memory_read_state_machine(vm);
+            if (vm->e != IOVM1_SUCCESS) {
                 vm->s = IOVM1_STATE_ERRORED;
-                vm->e = IOVM1_ERROR_TIMED_OUT;
-                host_timer_cleanup(vm);
-                host_send_abort(vm);
-
+                host_send_end(vm);
                 return vm->e;
             }
 
-            // compare byte:
-            if (!comparison_funcs[vm->wa.q](host_memory_read_no_advance(vm) & vm->wa.k, vm->wa.v)) {
-                // write incomplete:
+            if (vm->rd.os == IOVM1_OPSTATE_COMPLETED) {
+                // start next instruction:
+                vm->s = IOVM1_STATE_EXECUTE_NEXT;
                 vm->e = IOVM1_SUCCESS;
+                break;
+            }
+
+            // host wants to be called back again:
+            vm->e = IOVM1_SUCCESS;
+            return vm->e;
+        }
+        case IOVM1_STATE_WRITE: {
+        do_write:
+            vm->e = host_memory_write_state_machine(vm);
+            if (vm->e != IOVM1_SUCCESS) {
+                vm->s = IOVM1_STATE_ERRORED;
+                host_send_end(vm);
                 return vm->e;
             }
 
-            // wait complete; start next instruction:
-            vm->s = IOVM1_STATE_EXECUTE_NEXT;
+            if (vm->wr.os == IOVM1_OPSTATE_COMPLETED) {
+                // write complete; start next instruction:
+                vm->s = IOVM1_STATE_EXECUTE_NEXT;
+                vm->e = IOVM1_SUCCESS;
+                break;
+            }
+
+            // host wants to be called back again:
             vm->e = IOVM1_SUCCESS;
-            host_timer_cleanup(vm);
-            break;
+            return vm->e;
+        }
+        case IOVM1_STATE_WAIT: {
+        do_wait:
+            vm->e = host_memory_wait_state_machine(vm);
+            if (vm->e != IOVM1_SUCCESS) {
+                vm->s = IOVM1_STATE_ERRORED;
+                host_send_end(vm);
+                return vm->e;
+            }
+
+            if (vm->wa.os == IOVM1_OPSTATE_COMPLETED) {
+                // wait complete; start next instruction:
+                vm->s = IOVM1_STATE_EXECUTE_NEXT;
+                vm->e = IOVM1_SUCCESS;
+                break;
+            }
+
+            // host wants to be called back again:
+            vm->e = IOVM1_SUCCESS;
+            return vm->e;
+        }
         default:
             // on first execution, state machine lands here:
             if (vm->s < IOVM1_STATE_LOADED) {
@@ -153,6 +143,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
             if (vm->s == IOVM1_STATE_RESET) {
                 // reset execution state:
                 vm->m.off = 0;
+                vm->next_off = 0;
                 vm->p = 0;
                 vm->e = IOVM1_SUCCESS;
                 vm->s = IOVM1_STATE_EXECUTE_NEXT;
@@ -161,6 +152,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
     }
 
     while (vm->s == IOVM1_STATE_EXECUTE_NEXT) {
+        vm->m.off = vm->next_off;
         vm->p = vm->m.off;
 
         if (vm->m.off >= vm->m.len) {
@@ -177,6 +169,8 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
         uint8_t o = IOVM1_INST_OPCODE(x);
         switch (o) {
             case IOVM1_OPCODE_READ: {
+                vm->next_off = vm->m.off + 5;
+
                 // memory chip identifier:
                 vm->rd.c = vm->m.ptr[vm->m.off++];
                 // 24-bit address:
@@ -190,18 +184,14 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 vm->rd.l = vm->rd.l_raw;
                 if (vm->rd.l == 0) { vm->rd.l = 256; }
 
-                vm->rd.d = vm->rd.dm;
-
-                // initialize memory controller for reading from chip at address:
-                if ((vm->e = host_memory_start_read(vm, vm->rd.c, vm->rd.a, vm->rd.l)) != IOVM1_SUCCESS) {
-                    return vm->e;
-                }
-
                 // perform entire read:
                 vm->s = IOVM1_STATE_READ;
+                vm->rd.os = IOVM1_OPSTATE_INIT;
                 goto do_read;
             }
             case IOVM1_OPCODE_WRITE: {
+                vm->next_off = vm->m.off + 5;
+
                 // memory chip identifier:
                 vm->wr.c = vm->m.ptr[vm->m.off++];
                 // 24-bit address:
@@ -216,16 +206,17 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 vm->wr.l = vm->wr.l_raw;
                 if (vm->wr.l == 0) { vm->wr.l = 256; }
 
-                // initialize memory controller for writing to chip at address:
-                if ((vm->e = host_memory_start_write(vm, vm->wr.c, vm->wr.a, vm->wr.l)) != IOVM1_SUCCESS) {
-                    return vm->e;
-                }
+                vm->next_off += vm->wr.l;
 
                 // perform entire write:
                 vm->s = IOVM1_STATE_WRITE;
+                vm->wr.os = IOVM1_OPSTATE_INIT;
+                vm->wr.p = vm->m.off;
                 goto do_write;
             }
             case IOVM1_OPCODE_WAIT_UNTIL: {
+                vm->next_off = vm->m.off + 6;
+
                 vm->wa.q = IOVM1_INST_CMP_OPERATOR(x);
 
                 // memory chip identifier:
@@ -241,17 +232,14 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 // comparison mask
                 vm->wa.k  = vm->m.ptr[vm->m.off++];
 
-                // initialize memory controller for reading from chip at address:
-                if ((vm->e = host_memory_start_read(vm, vm->wa.c, vm->wa.a, 1)) != IOVM1_SUCCESS) {
-                    return vm->e;
-                }
-
                 // perform loop to wait until (comparison byte & mask) successfully compares to value:
-                host_timer_reset(vm);
                 vm->s = IOVM1_STATE_WAIT;
+                vm->wa.os = IOVM1_OPSTATE_INIT;
                 goto do_wait;
             }
             case IOVM1_OPCODE_ABORT_IF: {
+                vm->next_off = vm->m.off + 6;
+
                 enum iovm1_cmp_operator q = IOVM1_INST_CMP_OPERATOR(x);
 
                 // memory chip identifier:
@@ -267,28 +255,34 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 // comparison mask
                 uint8_t k  = vm->m.ptr[vm->m.off++];
 
-                // initialize memory controller for reading chip at address:
-                if ((vm->e = host_memory_start_read(vm, c, a, 1)) != IOVM1_SUCCESS) {
+                uint8_t b;
+
+                // try to read a byte from memory chip:
+                if ((vm->e = host_memory_try_read_byte(vm, c, a, &b)) != IOVM1_SUCCESS) {
+                    vm->s = IOVM1_STATE_ERRORED;
+                    host_send_end(vm);
                     return vm->e;
                 }
 
-                // perform loop to wait until comparison byte matches value:
-                if (comparison_funcs[q](host_memory_read_no_advance(vm) & k, v)) {
-                    // successful exit:
-                    vm->e = IOVM1_SUCCESS;
+                // test comparison byte against mask and value:
+                if (!iovm1_memory_cmp(q, b & k, v)) {
+                    // failed check; send an abort message back to the client:
+                    vm->s = IOVM1_STATE_ERRORED;
+                    vm->e = IOVM1_ERROR_ABORTED;
+                    host_send_end(vm);
+
                     return vm->e;
                 }
 
-                // failed check; send an abort message back to the client:
-                vm->s = IOVM1_STATE_ERRORED;
-                vm->e = IOVM1_ERROR_ABORTED;
-                host_send_abort(vm);
-
+                // successful exit:
+                vm->e = IOVM1_SUCCESS;
                 return vm->e;
             }
             default:
                 // unknown opcode:
                 vm->e = IOVM1_ERROR_UNKNOWN_OPCODE;
+                vm->s = IOVM1_STATE_ERRORED;
+                host_send_end(vm);
                 return vm->e;
         }
     }
