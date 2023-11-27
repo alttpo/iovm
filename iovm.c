@@ -61,7 +61,7 @@ enum iovm1_error iovm1_exec_reset(struct iovm1_t *vm) {
     return IOVM1_SUCCESS;
 }
 
-enum iovm1_error host_memory_try_read_byte(struct iovm1_t *vn, iovm1_memory_chip_t c, uint24_t a, uint8_t *b);
+enum iovm1_error host_memory_try_read_byte(struct iovm1_t *vn, enum iovm1_memory_chip c, uint24_t a, uint8_t *b);
 
 // executes the next IOVM instruction
 enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
@@ -172,7 +172,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 vm->next_off = vm->m.off + 5;
 
                 // memory chip identifier:
-                vm->rd.c = vm->m.ptr[vm->m.off++];
+                vm->rd.c = (enum iovm1_memory_chip)vm->m.ptr[vm->m.off++];
                 // 24-bit address:
                 uint24_t lo = (uint24_t)(vm->m.ptr[vm->m.off++]);
                 uint24_t hi = (uint24_t)(vm->m.ptr[vm->m.off++]) << 8;
@@ -193,7 +193,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 vm->next_off = vm->m.off + 5;
 
                 // memory chip identifier:
-                vm->wr.c = vm->m.ptr[vm->m.off++];
+                vm->wr.c = (enum iovm1_memory_chip)vm->m.ptr[vm->m.off++];
                 // 24-bit address:
                 uint24_t lo = (uint24_t)(vm->m.ptr[vm->m.off++]);
                 uint24_t hi = (uint24_t)(vm->m.ptr[vm->m.off++]) << 8;
@@ -220,7 +220,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 vm->wa.q = IOVM1_INST_CMP_OPERATOR(x);
 
                 // memory chip identifier:
-                vm->wa.c = vm->m.ptr[vm->m.off++];
+                vm->wa.c = (enum iovm1_memory_chip)vm->m.ptr[vm->m.off++];
                 // 24-bit address:
                 uint24_t lo = (uint24_t)(vm->m.ptr[vm->m.off++]);
                 uint24_t hi = (uint24_t)(vm->m.ptr[vm->m.off++]) << 8;
@@ -243,7 +243,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 enum iovm1_cmp_operator q = IOVM1_INST_CMP_OPERATOR(x);
 
                 // memory chip identifier:
-                iovm1_memory_chip_t c = vm->m.ptr[vm->m.off++];
+                enum iovm1_memory_chip c = (enum iovm1_memory_chip)vm->m.ptr[vm->m.off++];
                 // 24-bit address:
                 uint24_t lo = (uint24_t)(vm->m.ptr[vm->m.off++]);
                 uint24_t hi = (uint24_t)(vm->m.ptr[vm->m.off++]) << 8;

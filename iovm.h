@@ -209,8 +209,6 @@ enum iovm1_memory_chip {
     MEM_SNES_SRAM,
 };
 
-typedef enum iovm1_memory_chip iovm1_memory_chip_t;
-
 enum iovm1_state {
     IOVM1_STATE_INIT,
     IOVM1_STATE_LOADED,
@@ -261,7 +259,7 @@ extern enum iovm1_error host_memory_write_state_machine(struct iovm1_t *vm);
 extern enum iovm1_error host_memory_wait_state_machine(struct iovm1_t *vm);
 
 // try to read a byte from a memory chip, return byte in `*b` if successful
-extern enum iovm1_error host_memory_try_read_byte(struct iovm1_t *vm, iovm1_memory_chip_t c, uint24_t a, uint8_t *b);
+extern enum iovm1_error host_memory_try_read_byte(struct iovm1_t *vm, enum iovm1_memory_chip c, uint24_t a, uint8_t *b);
 
 // send a program-end message to the client
 extern void host_send_end(struct iovm1_t *vm);
@@ -291,7 +289,7 @@ struct iovm1_t {
         // read
         struct {
             enum iovm1_opstate os;
-            iovm1_memory_chip_t c;
+            enum iovm1_memory_chip c;
             uint24_t a;
             uint8_t l_raw;
             int l;
@@ -299,7 +297,7 @@ struct iovm1_t {
         // write
         struct {
             enum iovm1_opstate os;
-            iovm1_memory_chip_t c;
+            enum iovm1_memory_chip c;
             uint24_t a;
             uint8_t l_raw;
             int l;
@@ -309,7 +307,7 @@ struct iovm1_t {
         // wait
         struct {
             enum iovm1_opstate os;
-            iovm1_memory_chip_t c;
+            enum iovm1_memory_chip c;
             uint24_t a;
             uint8_t v;
             uint8_t k;
@@ -351,7 +349,7 @@ static inline bool iovm1_memory_cmp(enum iovm1_cmp_operator q, uint8_t a, uint8_
 
 // tests the read byte `b` with the current wait operation's comparison function and bit mask
 static inline bool iovm1_memory_wait_test_byte(struct iovm1_t *vm, uint8_t a) {
-    return iovm1_memory_cmp(vm->wa.q & 7, a & vm->wa.k, vm->wa.v);
+    return iovm1_memory_cmp(vm->wa.q, a & vm->wa.k, vm->wa.v);
 }
 
 #ifdef __cplusplus

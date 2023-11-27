@@ -18,7 +18,7 @@ int tests_failed = 0;
 ///////////////////////////////////////////////////////////////////////////////////////////
 
 struct fake {
-    iovm1_memory_chip_t c;
+    enum iovm1_memory_chip c;
     uint24_t a;
 
     uint8_t l;
@@ -39,7 +39,7 @@ void fake_init_test(struct iovm1_t *vm) {
 // host interface implementation:
 
 // initialize memory controller to point at specific memory chip and a starting address within it
-enum iovm1_error host_memory_init(struct iovm1_t *vm, iovm1_memory_chip_t c, uint24_t a) {
+enum iovm1_error host_memory_init(struct iovm1_t *vm, enum iovm1_memory_chip c, uint24_t a) {
     fake_host.c = c;
     fake_host.a = a;
     return IOVM1_SUCCESS;
