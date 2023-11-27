@@ -265,8 +265,8 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 }
 
                 // test comparison byte against mask and value:
-                if (!iovm1_memory_cmp(q, b & k, v)) {
-                    // failed check; send an abort message back to the client:
+                if (iovm1_memory_cmp(q, b & k, v)) {
+                    // abort if true; send an abort message back to the client:
                     vm->s = IOVM1_STATE_ERRORED;
                     vm->e = IOVM1_ERROR_ABORTED;
                     host_send_end(vm);
@@ -274,7 +274,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                     return vm->e;
                 }
 
-                // successful exit:
+                // do not abort if false:
                 vm->e = IOVM1_SUCCESS;
                 return vm->e;
             }
