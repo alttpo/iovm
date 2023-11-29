@@ -15,6 +15,18 @@ extern "C" {
 
     host MUST implement host_* named functions.
 
+    the state_machine functions allow the host to control the exact implementations of the read, write, and wait
+    commands. each state_machine has a mutable state struct within `struct iovm1_t` that tracks mutable state for
+    the command. each mutable state struct has an `enum iovm1_opstate os` field which controls how the iovm1_exec()
+    calls the state_machine function.
+
+    when a command starts, iovm1_exec() initializes `os` to `IOVM1_OPSTATE_INIT`. the state_machine function should then
+    set `os` to `IOVM1_OPSTATE_CONTINUE` after it handles the init state. iovm1_exec() will continually call the
+    state_machine function until either `os` is IOVM1_OPSTATE_COMPLETED or the state_machine function returns an error.
+
+    if a state_machine function returns an error iovm1_exec() calls host_send_end() to report the failure as a message
+    to the client and execution stops.
+
 memory:
     m[...]:             program memory, at least 1 byte
 
@@ -35,50 +47,80 @@ opcodes (o):
      765432 10
     [------ 00]
 
-        // memory chip identifier (0..255)
-        c  = m[p++]
-        // memory address in 24-bit little-endian byte order:
-        lo = m[p++]
-        hi = m[p++] << 8
-        bk = m[p++] << 16
-        a  = bk | hi | lo
-        // length of read in bytes (treat 0 as 256, else 1..255)
-        l_raw = m[p++]
-        l  = translate_zero_byte(lr)
+        host functions used:
+            enum iovm1_error host_memory_read_state_machine(struct iovm1_t *vm);
 
-        {
+        // read state struct within struct iovm1_t:
+        struct {
+            // current state:
+            enum iovm1_opstate os;
+
+            enum iovm1_memory_chip c;
+            uint24_t a;
+            uint8_t l_raw;
+            int l;
+        } rd;
+
+        // memory chip identifier (0..255)
+        vm->rd.c  = m[p++]
+        // memory address in 24-bit little-endian byte order:
+        vm->rd.a  = m[p++]
+        vm->rd.a |= m[p++] << 8
+        vm->rd.a |= m[p++] << 16
+        // length of read in bytes (treat 0 as 256, else 1..255)
+        vm->rd.l_raw = m[p++]
+        vm->rd.l  = translate_zero_byte(vm->rd.l_raw)
+
+        // trivial example read command state machine:
+        enum iovm1_error host_memory_read_state_machine(struct iovm1_t *vm) {
             uint8_t dm[256];
             uint8_t *d = dm;
-            // initialize memory controller for chip and starting address:
-            host_memory_init(vm, c, a);
-            // perform entire read:
-            while (l--)
-                *d++ = host_memory_read_auto_advance(vm);
-            // send read data back to client:
-            host_send_read(vm, l_raw, d);
+            while (vm->rd.l-- > 0)
+                *d++ = read_memory_chip(vm->rd.c, vm->rd.a++);
+            send_reply(dm);
+            vm->rd.os = IOVM1_OPSTATE_COMPLETED;
+            return IOVM1_SUCCESS;
         }
 
- -----------------------
+-----------------------
   1=WRITE:              writes bytes to memory chip
      765432 10
     [------ 01]
 
-        // memory chip identifier (0..255)
-        c  = m[p++]
-        // memory address in 24-bit little-endian byte order:
-        lo = m[p++]
-        hi = m[p++] << 8
-        bk = m[p++] << 16
-        a  = bk | hi | lo
-        // length of read in bytes (treat 0 as 256, else 1..255)
-        l  = translate_zero_byte(m[p++])
+        host functions used:
+            enum iovm1_error host_memory_write_state_machine(struct iovm1_t *vm);
 
-        {
-            // initialize memory controller for chip and starting address:
-            host_memory_init(vm, c, a);
-            // perform entire write:
-            while (l--)
-                host_memory_write_auto_advance(vm, m[p++]);
+        // write state struct within struct iovm1_t:
+        struct {
+            // current state:
+            enum iovm1_opstate os;
+
+            enum iovm1_memory_chip c;
+            uint24_t a;
+            uint8_t l_raw;
+            int l;
+            // offset into vm->m.ptr to source data from
+            uint32_t p;
+        } wr;
+
+        // memory chip identifier (0..255)
+        vm->wr.c  = m[p++]
+        // memory address in 24-bit little-endian byte order:
+        vm->wr.a  = m[p++]
+        vm->wr.a |= m[p++] << 8
+        vm->wr.a |= m[p++] << 16
+        // length of write in bytes (treat 0 as 256, else 1..255)
+        vm->wr.l_raw = m[p++]
+        vm->wr.l  = translate_zero_byte(vm->wr.l_raw)
+        // track data pointer in program memory:
+        vm->wr.p  = vm->m.off;
+
+        // trivial example write command state machine:
+        enum iovm1_error host_memory_write_state_machine(struct iovm1_t *vm) {
+            while (vm->wr.l-- > 0)
+                write_memory_chip(vm->wr.c, vm->wr.a++, vm->m.ptr[vm->wr.p++]);
+            vm->wr.os = IOVM1_OPSTATE_COMPLETED;
+            return IOVM1_SUCCESS;
         }
 
 -----------------------
@@ -95,33 +137,41 @@ opcodes (o):
             6 = undefined; returns false
             7 = undefined; returns false
 
+        host interface functions used:
+            enum iovm1_error host_memory_wait_state_machine(struct iovm1_t *vm)
+
+        // wait state struct within struct iovm1_t:
+        struct {
+            // current state:
+            enum iovm1_opstate os;
+
+            enum iovm1_memory_chip c;
+            uint24_t a;
+            uint8_t v;
+            uint8_t k;
+            enum iovm1_cmp_operator q;
+        } wa;
+
         // memory chip identifier (0..255)
-        c  = m[p++]
+        vm->wa.c  = m[p++]
         // memory address in 24-bit little-endian byte order:
-        lo = m[p++]
-        hi = m[p++] << 8
-        bk = m[p++] << 16
-        a  = bk | hi | lo
+        vm->wa.a  = m[p++]
+        vm->wa.a |= m[p++] << 8
+        vm->wa.a |= m[p++] << 16
         // comparison byte
-        v  = m[p++]
+        vm->wa.v  = m[p++]
         // comparison mask
-        k  = m[p++]
+        vm->wa.k  = m[p++]
 
-        {
-            // initialize memory controller for chip and starting address:
-            host_memory_init(vm, c, a);
-            host_timer_reset(vm);
-
-            // perform loop to wait until comparison byte matches value:
-            while (!host_timer_elapsed(vm)) {
-                if (comparison_funcs[q](host_memory_read_no_advance(vm) & k, v)) {
-                    // successful exit:
-                    return;
-                }
+        // trivial example wait command state machine:
+        enum iovm1_error host_memory_wait_state_machine(struct iovm1_t *vm) {
+            bool result = false;
+            timer_reset();
+            while (!timer_elapsed() && !result) {
+                result = iovm1_memory_wait_test_byte(vm, read_memory_chip(vm->wa.c, vm->wa.a));
             }
-
-            // timed out; send an abort message back to the client:
-            host_send_abort(vm);
+            vm->wa.os = IOVM1_OPSTATE_COMPLETED;
+            return IOVM1_SUCCESS;
         }
 
 -----------------------
@@ -138,29 +188,31 @@ opcodes (o):
             6 = undefined; returns false
             7 = undefined; returns false
 
+        host interface functions used:
+            enum iovm1_error host_memory_try_read_byte(struct iovm1_t *vm, enum iovm1_memory_chip c, uint24_t a, uint8_t *b);
+
         // memory chip identifier (0..255)
         c  = m[p++]
         // memory address in 24-bit little-endian byte order:
-        lo = m[p++]
-        hi = m[p++] << 8
-        bk = m[p++] << 16
-        a  = bk | hi | lo
+        a  = m[p++]
+        a |= m[p++] << 8
+        a |= m[p++] << 16
         // comparison byte
         v  = m[p++]
         // comparison mask
         k  = m[p++]
 
+        // ABORT_IF command is implemented entirely by iovm1_exec() and not by a state machine:
         {
-            // initialize memory controller for chip and starting address:
-            host_memory_init(vm, c, a);
-            // perform single byte read and compare:
-            if ( comparison_funcs[q]((host_memory_read_no_advance(vm) & k), v) ) {
-                // successful exit:
-                return;
-            }
+            uint8_t b;
 
-            // send an abort message to client:
-            host_send_abort(vm);
+            // try single byte read:
+            host_memory_try_read_byte(vm, c, a, &b);
+
+            // compare:
+            bool result = iovm1_memory_cmp(q, b & k, v);
+
+            // abort if result == true, else continue to next command
         }
 */
 
@@ -241,12 +293,6 @@ enum iovm1_opstate {
     IOVM1_OPSTATE_COMPLETED,
 };
 
-struct bslice {
-    const uint8_t *ptr;
-    uint32_t len;
-    uint32_t off;
-};
-
 struct iovm1_t;
 
 // host interface:
@@ -268,7 +314,11 @@ extern void host_send_end(struct iovm1_t *vm);
 
 struct iovm1_t {
     // linear memory containing procedure instructions and immediate data
-    struct bslice m;
+    struct {
+        const uint8_t *ptr;
+        uint32_t len;
+        uint32_t off;
+    } m;
 
     // current state
     enum iovm1_state s;
@@ -347,7 +397,7 @@ static inline bool iovm1_memory_cmp(enum iovm1_cmp_operator q, uint8_t a, uint8_
     }
 }
 
-// tests the read byte `b` with the current wait operation's comparison function and bit mask
+// tests the read byte `b` with the current wait command's comparison function and bit mask
 static inline bool iovm1_memory_wait_test_byte(struct iovm1_t *vm, uint8_t a) {
     return iovm1_memory_cmp(vm->wa.q, a & vm->wa.k, vm->wa.v);
 }
