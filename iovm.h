@@ -175,7 +175,7 @@ opcodes (o):
         }
 
 -----------------------
-  3=ABORT_IF:           reads a byte from a memory chip and compares to a value; if true, aborts program execution
+  3=ABORT_UNLESS:       reads a byte from a memory chip and compares to a value; if false, aborts program execution
      765 432 10
     [--- qqq 11]
         q = comparison operator [0..7]
@@ -202,7 +202,7 @@ opcodes (o):
         // comparison mask
         k  = m[p++]
 
-        // ABORT_IF command is implemented entirely by iovm1_exec() and not by a state machine:
+        // ABORT_UNLESS command is implemented entirely by iovm1_exec() and not by a state machine:
         {
             uint8_t b;
 
@@ -212,7 +212,7 @@ opcodes (o):
             // compare:
             bool result = iovm1_memory_cmp(q, b & k, v);
 
-            // abort if result == true, else continue to next command
+            // abort if result == false, else continue to next command
         }
 */
 
@@ -225,7 +225,7 @@ enum iovm1_opcode {
     IOVM1_OPCODE_READ,
     IOVM1_OPCODE_WRITE,
     IOVM1_OPCODE_WAIT_UNTIL,
-    IOVM1_OPCODE_ABORT_IF
+    IOVM1_OPCODE_ABORT_UNLESS
 };
 
 enum iovm1_cmp_operator {
@@ -245,8 +245,8 @@ enum iovm1_cmp_operator {
         ((q)&7)<<2                \
     )
 
-#define IOVM1_MK_ABORT_IF(q) (  \
-        IOVM1_OPCODE_ABORT_IF | \
+#define IOVM1_MK_ABORT_UNLESS(q) (  \
+        IOVM1_OPCODE_ABORT_UNLESS | \
         ((q)&7)<<2              \
     )
 

@@ -237,7 +237,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 vm->wa.os = IOVM1_OPSTATE_INIT;
                 goto do_wait;
             }
-            case IOVM1_OPCODE_ABORT_IF: {
+            case IOVM1_OPCODE_ABORT_UNLESS: {
                 vm->next_off = vm->m.off + 6;
 
                 enum iovm1_cmp_operator q = IOVM1_INST_CMP_OPERATOR(x);
@@ -265,8 +265,8 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                 }
 
                 // test comparison byte against mask and value:
-                if (iovm1_memory_cmp(q, b & k, v)) {
-                    // abort if true; send an abort message back to the client:
+                if (!iovm1_memory_cmp(q, b & k, v)) {
+                    // abort if false; send an abort message back to the client:
                     vm->s = IOVM1_STATE_ERRORED;
                     vm->e = IOVM1_ERROR_ABORTED;
                     host_send_end(vm);
@@ -274,7 +274,7 @@ enum iovm1_error iovm1_exec(struct iovm1_t *vm) {
                     return vm->e;
                 }
 
-                // do not abort if false:
+                // do not abort if true:
                 vm->e = IOVM1_SUCCESS;
                 return vm->e;
             }
